@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Period": {
+      "title": "Period",
+      "description": "Represents a ticketing period",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "year": { "type": "number" },
+        "month": { "type": "number" },
+        "label": { "type": "string" },
+        "totalRows": { "type": "number" },
+        "uploadedAt": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "stats": { "type": "object" }
+      },
+      "required": ["id", "year", "month", "label"]
+    },
+    "PeriodChunk": {
+      "title": "PeriodChunk",
+      "description": "A partitioned chunk of rows for a period",
+      "type": "object",
+      "properties": {
+        "periodId": { "type": "string" },
+        "chunkIndex": { "type": "number" },
+        "rows": { "type": "array" }
+      },
+      "required": ["periodId", "chunkIndex", "rows"]
+    }
+  },
+  "firestore": {
+    "/periods/{periodId}": {
+      "schema": "Period",
+      "description": "Collection of ticketing periods"
+    },
+    "/period_chunks/{chunkId}": {
+      "schema": "PeriodChunk",
+      "description": "Chunked rows associated with a period"
+    }
+  }
+}
