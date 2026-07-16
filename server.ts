@@ -8,7 +8,7 @@ import pg from "pg";
 const { Pool } = pg;
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const CACHE_FILE = path.join(process.cwd(), "server_cache_v2.json");
 
 let poolInstance: pg.Pool | null = null;
