@@ -5,6 +5,3 @@ dist
 *.log
 .env
 .env.local
-firebase-applet-config.json
-firestore.rules
-firebase-blueprint.json

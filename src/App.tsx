@@ -168,12 +168,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-800">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200">
+      <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-lg border-b border-slate-200/80 glass-panel">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <PlnLogo height={42} />
             <div className="h-6 w-px bg-slate-200 mx-1.5 hidden sm:block"></div>
-            <span className="font-extrabold text-slate-900 tracking-tight hidden sm:block">Raw Data Manager</span>
+            <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-blue-700 tracking-tight hidden sm:block">PLN IconSLA Analytics</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -209,11 +209,11 @@ export default function App() {
                 <FileSpreadsheet className="w-8 h-8" />
               </div>
               <div className="space-y-3">
-                <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-slate-900">
-                  Raw Data Manager & Analyzer
+                <h1 className="text-4xl sm:text-5xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600">
+                  PLN IconSLA Analytics
                 </h1>
                 <p className="text-lg text-slate-500 max-w-xl mx-auto font-medium leading-relaxed">
-                  Transform raw spreadsheets and ticketing logs into actionable SLA statistics, performance metrics, and interactive charts.
+                  Analyze, visualize, and optimize Service Level Agreement metrics from raw ticketing sheets and performance logs.
                 </p>
               </div>
             </div>
@@ -224,7 +224,7 @@ export default function App() {
           // Data is Available in the Database (Show Yearly/Monthly Dashboard)
           <div className="px-6 py-8">
             {/* Header Toolbar containing Toggle Form button and Year pills */}
-            <div className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-6 border border-slate-200 rounded-2xl shadow-sm">
+            <div className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 p-6 border border-slate-200/80 rounded-2xl shadow-md shadow-slate-100/50 glass-card">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-cyan-600">
                   <Database className="w-5 h-5 animate-pulse" />
@@ -293,13 +293,13 @@ export default function App() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   {/* Left columns: File Upload */}
-                  <div className="lg:col-span-2 bg-white p-6 border border-slate-200 rounded-2xl shadow-sm">
+                  <div className="lg:col-span-2 p-6 border border-slate-200/80 rounded-2xl shadow-sm glass-card">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Upload New Month</h4>
                     <FileUpload onUploadSuccess={handleUploadSuccess} />
                   </div>
 
                   {/* Right column: Saved Datasets Management */}
-                  <div className="bg-white p-6 border border-slate-200 rounded-2xl shadow-sm flex flex-col">
+                  <div className="p-6 border border-slate-200/80 rounded-2xl shadow-sm flex flex-col glass-card">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Saved Datasets ({periods.length})</h4>
                     <div className="flex-grow space-y-3 max-h-[350px] overflow-y-auto pr-1">
                       {periods.map((p) => (
@@ -360,7 +360,7 @@ export default function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs font-semibold text-slate-400">
         <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>Powered by Node.js & React-Vite. Fully compatible with Python Raw Data Manager architecture.</p>
+          <p>Powered by Node.js & React-Vite. Secure Local SLA Insights.</p>
           <p>© {new Date().getFullYear()} PLN Icon Plus Workspace.</p>
         </div>
       </footer>

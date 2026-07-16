@@ -1,5 +1,5 @@
 {
-  "name": "Raw Data Manager",
+  "name": "PLN IconSLA Analytics Dashboard",
   "description": "A full-stack application for managing and transforming raw spreadsheet data into visual insights and reports.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

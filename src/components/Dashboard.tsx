@@ -614,22 +614,22 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
 
         {/* Metrics Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl hover:shadow-md transition-shadow">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
             <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">TOTAL TICKETS</p>
             <h3 className="text-3xl font-black text-slate-900 mt-2">{filteredData.length.toLocaleString('id-ID')}</h3>
             <span className="text-xs font-semibold text-cyan-600 bg-cyan-50 px-2.5 py-1 rounded-md mt-3 inline-block">Volume</span>
           </div>
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl hover:shadow-md transition-shadow">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
             <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">SBU OWNERS</p>
             <h3 className="text-3xl font-black text-slate-900 mt-2">{(activeStats?.sbu_counts?.length || 0).toLocaleString('id-ID')}</h3>
             <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md mt-3 inline-block">Regions</span>
           </div>
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl hover:shadow-md transition-shadow">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
             <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">KANTOR PERWAKILAN (KP)</p>
             <h3 className="text-3xl font-black text-slate-900 mt-2">{(activeStats?.kp_counts?.length || 0).toLocaleString('id-ID')}</h3>
             <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md mt-3 inline-block">Offices</span>
           </div>
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl hover:shadow-md transition-shadow">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
             <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">IMPACTED CUSTOMERS</p>
             <h3 className="text-3xl font-black text-slate-900 mt-2">{(activeStats?.customer_counts?.length || 0).toLocaleString('id-ID')}</h3>
             <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2.5 py-1 rounded-md mt-3 inline-block">Customers</span>
@@ -639,7 +639,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
         {/* KPs and Customers Block */}
         <div className="space-y-8">
           {/* Top KPs */}
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl glass-card">
             <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
               <Target className="w-5 h-5 text-emerald-500" /> Top Kantor Perwakilan (KP)
             </h3>
@@ -665,7 +665,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
           </div>
  
           {/* Top Customers by volume (Vertical wide list) */}
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl glass-card">
             <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
               <Users className="w-5 h-5 text-violet-500" /> Top Impacted Customers
             </h3>
@@ -711,7 +711,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
         </div>
 
         {/* Repeating Tickets Analysis Section */}
-        <div className="bg-white border border-slate-200 shadow-sm p-8 rounded-2xl shadow-slate-100/50 space-y-6">
+        <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-8 rounded-2xl glass-card space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
@@ -960,7 +960,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
         </div>
 
         {/* Hierarchical Customer Ticket Explorer */}
-        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl shadow-slate-100/50 space-y-6 p-6">
+        <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 rounded-2xl space-y-6 p-6 glass-card">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
             <div>
               <h3 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
@@ -1218,7 +1218,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
       {/* Metrics Row */}
       {hasSummary && globalMetrics && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-300">
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl hover:shadow-md transition-shadow">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
             <div className="flex items-center justify-between mb-4">
               <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
                 <DollarSign className="w-6 h-6" />
@@ -1231,7 +1231,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
             <h3 className="text-2xl font-black text-slate-900 mt-1">{globalMetrics.revenue}</h3>
           </div>
 
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl hover:shadow-md transition-shadow">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
             <div className="flex items-center justify-between mb-4">
               <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
                 <Users className="w-6 h-6" />
@@ -1244,7 +1244,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
             <h3 className="text-2xl font-black text-slate-900 mt-1">{globalMetrics.customers}</h3>
           </div>
 
-          <div className="bg-white border border-slate-200 shadow-sm p-6 rounded-2xl hover:shadow-md transition-shadow">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
             <div className="flex items-center justify-between mb-4">
               <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
                 <TrendingUp className="w-6 h-6" />
@@ -1367,7 +1367,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
 
       {/* Standard Detail Log Table */}
       {extractedData && extractedData.length > 0 && (
-        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl overflow-hidden shadow-slate-100/50">
+        <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 rounded-2xl overflow-hidden glass-card">
           <div className="px-6 py-5 border-b border-slate-100">
             <h3 className="text-lg font-bold text-slate-900">Extracted Detail Log Records</h3>
             <p className="text-xs font-medium text-slate-400 mt-0.5">Showing first 100 records of extracted columns</p>
