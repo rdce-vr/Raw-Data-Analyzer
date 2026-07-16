@@ -175,6 +175,18 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
     return originalData.filter((row: any) => row.namasbu === selectedSBU);
   }, [originalData, selectedSBU, fileType]);
 
+  const sidFrequency = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (fileType !== 'ticketing' || !filteredData) return counts;
+    filteredData.forEach((row: any) => {
+      const sid = String(row.sidbaru || row.sidlama || "").trim();
+      if (sid) {
+        counts[sid] = (counts[sid] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [filteredData, fileType]);
+
   const filteredStats = useMemo(() => {
     if (fileType !== 'ticketing') return null;
     if (!filteredData || filteredData.length === 0) {
@@ -264,9 +276,8 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
     const penyebabDurations: Record<string, number[]> = {};
 
     filteredData.forEach((row: any) => {
-      // check laporanberulang
-      const repeatsVal = parseInt(row.laporanberulang);
-      const repeats = isNaN(repeatsVal) ? 1 : repeatsVal; // Default to 1 if empty/NaN
+      const sid = String(row.sidbaru || row.sidlama || "").trim();
+      const repeats = sid ? (sidFrequency[sid] || 1) : 1;
 
       if (repeats > 0) {
         if (repeats > maxRepeats) maxRepeats = repeats;
@@ -333,7 +344,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
       distribution,
       topCauses
     };
-  }, [filteredData, fileType]);
+  }, [filteredData, fileType, sidFrequency]);
 
   // --- HIERARCHICAL DATA GROUPING LOGIC ---
   const groupedTicketingData = useMemo(() => {
@@ -409,14 +420,17 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
   const detailedRepeatingTickets = useMemo(() => {
     if (fileType !== 'ticketing') return [];
     return filteredData.filter((row: any) => {
-      const repeatsVal = parseInt(row.laporanberulang);
-      return !isNaN(repeatsVal) && repeatsVal > 1;
+      const sid = String(row.sidbaru || row.sidlama || "").trim();
+      const repeats = sid ? (sidFrequency[sid] || 1) : 1;
+      return repeats > 1;
     }).sort((a: any, b: any) => {
-      const bRep = parseInt(b.laporanberulang) || 0;
-      const aRep = parseInt(a.laporanberulang) || 0;
-      return bRep - aRep;
+      const sidA = String(a.sidbaru || a.sidlama || "").trim();
+      const sidB = String(b.sidbaru || b.sidlama || "").trim();
+      const repeatsA = sidFrequency[sidA] || 1;
+      const repeatsB = sidFrequency[sidB] || 1;
+      return repeatsB - repeatsA;
     });
-  }, [filteredData, fileType]);
+  }, [filteredData, fileType, sidFrequency]);
 
   const filteredRepTickets = useMemo(() => {
     if (!repSearchQuery) return detailedRepeatingTickets;
@@ -916,7 +930,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                             <td className="px-5 py-3 text-slate-700 font-bold">{row.penyebab || '-'}</td>
                             <td className="px-5 py-3 font-mono">
                               <span className="bg-rose-50 border border-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full font-black">
-                                {row.laporanberulang}x Repeats
+                                {sidFrequency[String(row.sidbaru || row.sidlama || '').trim()] || 1}x Repeats
                               </span>
                             </td>
                             <td className="px-5 py-3 font-mono text-slate-600">
@@ -1063,9 +1077,8 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                                         <th className="px-4 py-2 text-[10px]">TICKET ID</th>
                                         <th className="px-4 py-2 text-[10px]">SBU OWNER</th>
                                         <th className="px-4 py-2 text-[10px]">KP</th>
-                                        <th className="px-4 py-2 text-[10px]">OUTAGE START</th>
-                                        <th className="px-4 py-2 text-[10px]">RESOLVED TIME</th>
-                                        <th className="px-4 py-2 text-[10px]">DURATION</th>
+                                        <th className="px-4 py-2 text-[10px]">OPEN TICKET DATE</th>
+                                        <th className="px-4 py-2 text-[10px]">TICKET DURATION</th>
                                         <th className="px-4 py-2 text-[10px]">REPEATING</th>
                                         <th className="px-4 py-2 text-[10px]">CAUSE</th>
                                       </tr>
@@ -1077,18 +1090,15 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                                           <td className="px-4 py-2.5 text-slate-600 font-semibold">{t.namasbu || '-'}</td>
                                           <td className="px-4 py-2.5 text-slate-500">{t.namakp || '-'}</td>
                                           <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">
-                                            {t.mulaioutage ? new Date(t.mulaioutage).toLocaleString('id-ID') : '-'}
-                                          </td>
-                                          <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">
-                                            {t.selesaioutage ? new Date(t.selesaioutage).toLocaleString('id-ID') : '-'}
+                                            {t.waktulapor || t.tanggalinsiden || t.waktugangguan2 || '-'}
                                           </td>
                                           <td className="px-4 py-2.5 font-mono text-slate-700">
-                                            {parseFloat(t.durasigangguanmenit || 0).toLocaleString('id-ID')} m
+                                            {t.durasigangguan || (t.durasigangguanmenit ? `${t.durasigangguanmenit} m` : '-')}
                                           </td>
                                           <td className="px-4 py-2.5 font-mono">
-                                            {parseInt(t.laporanberulang || 0) > 1 ? (
+                                            {sidFrequency[String(t.sidbaru || t.sidlama || '').trim()] > 1 ? (
                                               <span className="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full font-bold">
-                                                {t.laporanberulang}x Repeats
+                                                {sidFrequency[String(t.sidbaru || t.sidlama || '').trim()]}x Repeats
                                               </span>
                                             ) : (
                                               <span className="text-slate-400">1x (First)</span>
