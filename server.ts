@@ -67,6 +67,109 @@ async function initializeDbSchema() {
   }
 }
 
+// Helper to write to JSON cache
+function saveCache(data: any) {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.error("Cache saving error:", err);
+  }
+}
+
+// Helper to load from JSON cache with automatic migration from single-period to multi-period
+function loadCache(): any {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const cache = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
+      // Migrate old single-period ticketing format to multi-period
+      if (cache && cache.type === "ticketing" && cache.data) {
+        console.log("Migrating legacy single-period ticketing cache to multi-period...");
+        const rows = cache.data || [];
+        const stats = cache.stats || {};
+
+        // Find period ID from rows
+        let periodId = "";
+        const periodCounts: Record<string, number> = {};
+        rows.forEach((row: any) => {
+          const d = parseExcelDate(row.waktulapor) || parseExcelDate(row.tanggalinsiden);
+          if (d) {
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            periodCounts[key] = (periodCounts[key] || 0) + 1;
+          }
+        });
+
+        let maxCount = 0;
+        Object.entries(periodCounts).forEach(([p, count]) => {
+          if (count > maxCount) {
+            maxCount = count;
+            periodId = p;
+          }
+        });
+
+        if (!periodId) {
+          const now = new Date();
+          periodId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        }
+
+        const migratedCache = {
+          type: "multi-period-ticketing",
+          periods: {
+            [periodId]: {
+              data: rows,
+              stats: stats
+            }
+          }
+        };
+        saveCache(migratedCache);
+        return migratedCache;
+      }
+      return cache;
+    }
+  } catch (err) {
+    console.error("Cache loading/migration error:", err);
+  }
+  return null;
+}
+
+// Save or update a specific period inside the multi-period cache
+function saveCachePeriod(periodId: string, data: any[], stats: any) {
+  try {
+    let cache = loadCache();
+    if (!cache || cache.type !== "multi-period-ticketing") {
+      cache = {
+        type: "multi-period-ticketing",
+        periods: {}
+      };
+    }
+    if (!cache.periods) {
+      cache.periods = {};
+    }
+    cache.periods[periodId] = {
+      data,
+      stats
+    };
+    saveCache(cache);
+  } catch (err) {
+    console.error("Error saving period to cache:", err);
+  }
+}
+
+// Delete a specific period from the multi-period cache
+function deleteCachePeriod(periodId: string) {
+  try {
+    const cache = loadCache();
+    if (cache && cache.type === "multi-period-ticketing" && cache.periods) {
+      if (cache.periods[periodId]) {
+        delete cache.periods[periodId];
+        saveCache(cache);
+        console.log(`Deleted period ${periodId} from multi-period cache.`);
+      }
+    }
+  } catch (err) {
+    console.error("Error deleting period from cache:", err);
+  }
+}
+
 async function seedDbIfEmpty() {
   try {
     const p = getDbPool();
@@ -78,84 +181,71 @@ async function seedDbIfEmpty() {
     }
 
     const cache = loadCache();
-    if (!cache || cache.type !== "ticketing") {
-      console.log("No ticketing cache found to seed.");
+    if (!cache) {
+      console.log("No cache found to seed.");
       return;
     }
 
-    console.log("Seeding PostgreSQL with existing cached ticketing data...");
-    const rows = cache.data || [];
-    const stats = cache.stats || {};
+    // Check if the cache is the new multi-period format
+    if (cache.type === "multi-period-ticketing" && cache.periods) {
+      console.log("Seeding PostgreSQL with all periods from multi-period cache...");
+      const client = await p.connect();
+      try {
+        await client.query("BEGIN");
 
-    const periodCounts: Record<string, number> = {};
-    rows.forEach((row: any) => {
-      const d = parseExcelDate(row.waktulapor) || parseExcelDate(row.tanggalinsiden);
-      if (d) {
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        periodCounts[key] = (periodCounts[key] || 0) + 1;
+        for (const [periodId, periodContent] of Object.entries(cache.periods)) {
+          const { data: rows, stats } = periodContent as any;
+          const [yearStr, monthStr] = periodId.split("-");
+          const year = parseInt(yearStr);
+          const month = parseInt(monthStr);
+          const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+          const label = `${monthNames[month - 1]} ${year}`;
+
+          console.log(`Seeding period ${periodId} with ${rows.length} rows...`);
+
+          await client.query(
+            `INSERT INTO periods (id, year, month, label, total_rows, uploaded_at, file_name, file_type, stats) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+             ON CONFLICT (id) DO NOTHING`,
+            [
+              periodId,
+              year,
+              month,
+              label,
+              rows.length,
+              new Date().toISOString(),
+              "server_cache_v2.json",
+              "ticketing",
+              JSON.stringify(stats)
+            ]
+          );
+
+          const chunkSize = 150;
+          for (let i = 0; i < rows.length; i += chunkSize) {
+            const chunkRows = rows.slice(i, i + chunkSize);
+            const chunkIdx = Math.floor(i / chunkSize);
+
+            await client.query(
+              `INSERT INTO period_chunks (period_id, chunk_index, rows) 
+               VALUES ($1, $2, $3) 
+               ON CONFLICT (period_id, chunk_index) DO NOTHING`,
+              [
+                periodId,
+                chunkIdx,
+                JSON.stringify(chunkRows)
+              ]
+            );
+          }
+        }
+
+        await client.query("COMMIT");
+        console.log("PostgreSQL database seeding completed successfully.");
+      } catch (txErr) {
+        await client.query("ROLLBACK");
+        throw txErr;
+      } finally {
+        client.release();
       }
-    });
-
-    let periodId = "2026-07";
-    let maxCount = 0;
-    Object.entries(periodCounts).forEach(([p, count]) => {
-      if (count > maxCount) {
-        maxCount = count;
-        periodId = p;
-      }
-    });
-
-    const [yearStr, monthStr] = periodId.split("-");
-    const year = parseInt(yearStr);
-    const month = parseInt(monthStr);
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const label = `${monthNames[month - 1]} ${year}`;
-
-    const client = await p.connect();
-    try {
-      await client.query("BEGIN");
-
-      await client.query(
-        `INSERT INTO periods (id, year, month, label, total_rows, uploaded_at, file_name, file_type, stats) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-         ON CONFLICT (id) DO NOTHING`,
-        [
-          periodId,
-          year,
-          month,
-          label,
-          rows.length,
-          new Date().toISOString(),
-          "server_cache_v2.json",
-          "ticketing",
-          JSON.stringify(stats)
-        ]
-      );
-
-      const chunkSize = 150;
-      for (let i = 0; i < rows.length; i += chunkSize) {
-        const chunkRows = rows.slice(i, i + chunkSize);
-        const chunkIdx = Math.floor(i / chunkSize);
-
-        await client.query(
-          `INSERT INTO period_chunks (period_id, chunk_index, rows) 
-           VALUES ($1, $2, $3) 
-           ON CONFLICT (period_id, chunk_index) DO NOTHING`,
-          [
-            periodId,
-            chunkIdx,
-            JSON.stringify(chunkRows)
-          ]
-        );
-      }
-
-      await client.query("COMMIT");
-      console.log(`Seeding completed. Saved ${rows.length} rows to PostgreSQL in period ${periodId}.`);
-    } catch (txErr) {
-      await client.query("ROLLBACK");
-      throw txErr;
-    } finally {
-      client.release();
     }
   } catch (err) {
     console.error("PostgreSQL seeding failed:", err);
@@ -167,27 +257,6 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Multer in-memory storage for handling file uploads
 const upload = multer({ storage: multer.memoryStorage() });
-
-// Helper to write to JSON cache
-function saveCache(data: any) {
-  try {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2), "utf8");
-  } catch (err) {
-    console.error("Cache saving error:", err);
-  }
-}
-
-// Helper to load from JSON cache
-function loadCache(): any {
-  try {
-    if (fs.existsSync(CACHE_FILE)) {
-      return JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
-    }
-  } catch (err) {
-    console.error("Cache loading error:", err);
-  }
-  return null;
-}
 
 // Name standardization & case-insensitive header mapping with robust normalization
 function renameAndNormalize(rows: any[], targetColumns: string[]): any[] {
@@ -436,6 +505,9 @@ app.delete("/api/period", async (req, res) => {
     // ON DELETE CASCADE automatically deletes associated chunks!
     await p.query("DELETE FROM periods WHERE id = $1", [periodId]);
 
+    // Synchronize cache-level deletions
+    deleteCachePeriod(periodId);
+
     return res.json({ success: true, message: `Successfully deleted period ${periodId}` });
   } catch (err: any) {
     console.error("Error deleting period:", err);
@@ -474,214 +546,225 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
         }
       });
 
-      // Status values counting
-      const statusCounts: Record<string, number> = {};
+      // Group rows by period key
+      const partitionedPeriods: Record<string, any[]> = {};
+      const reqCustomPeriod = req.body.customPeriod;
+      const forceCustom = reqCustomPeriod && /^\d{4}-\d{2}$/.test(reqCustomPeriod);
+
       processedRows.forEach((row: any) => {
-        const val = row.status !== undefined && row.status !== null ? String(row.status).trim() : "";
-        if (val) {
-          statusCounts[val] = (statusCounts[val] || 0) + 1;
-        }
-      });
-
-      const getTopCounts = (colName: string) => {
-        const counts: Record<string, number> = {};
-        processedRows.forEach((row: any) => {
-          const val = row[colName] !== undefined && row[colName] !== null ? String(row[colName]).trim() : "";
-          if (val) {
-            counts[val] = (counts[val] || 0) + 1;
-          }
-        });
-        return Object.entries(counts)
-          .map(([name, value]) => ({ name, value }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 50);
-      };
-
-      const sbuCounts = getTopCounts("namasbu");
-      const kpCounts = getTopCounts("namakp");
-      const customerCounts = getTopCounts("namapelanggan");
-
-      // Time Accumulations
-      const timeSummary: Record<string, any> = {};
-      
-      const timestampCols = ["waktulapor", "waktulaporanselesai", "waktugangguan2", "waktugangguanselesai"];
-      timestampCols.forEach(col => {
-        let minVal: Date | null = null;
-        let maxVal: Date | null = null;
-        processedRows.forEach((row: any) => {
-          const d = parseExcelDate(row[col]);
+        let periodKey = "";
+        if (forceCustom) {
+          periodKey = reqCustomPeriod;
+        } else {
+          const d = parseExcelDate(row.waktulapor) || parseExcelDate(row.tanggalinsiden);
           if (d) {
-            if (!minVal || d < minVal) minVal = d;
-            if (!maxVal || d > maxVal) maxVal = d;
+            periodKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          } else {
+            const now = new Date();
+            periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
           }
-        });
-        if (minVal || maxVal) {
-          timeSummary[col] = {
-            type: "timestamp",
-            min: minVal ? minVal.toISOString() : null,
-            max: maxVal ? maxVal.toISOString() : null
-          };
+        }
+        if (!partitionedPeriods[periodKey]) {
+          partitionedPeriods[periodKey] = [];
+        }
+        partitionedPeriods[periodKey].push(row);
+      });
+
+      // Find dominant period ID (for returning in the response)
+      let dominantPeriodId = "";
+      let maxCount = 0;
+      Object.entries(partitionedPeriods).forEach(([pId, rows]) => {
+        if (rows.length > maxCount) {
+          maxCount = rows.length;
+          dominantPeriodId = pId;
         }
       });
 
-      const numericDurationCols = ["durasilaporanmenit", "durasigangguanmenit"];
-      numericDurationCols.forEach(col => {
-        let total = 0;
-        let hasValid = false;
-        processedRows.forEach((row: any) => {
-          const val = parseFloat(row[col]);
-          if (!isNaN(val)) {
-            total += val;
-            hasValid = true;
+      const periodStats: Record<string, any> = {};
+
+      Object.entries(partitionedPeriods).forEach(([periodId, periodRows]) => {
+        // Status values counting
+        const statusCounts: Record<string, number> = {};
+        periodRows.forEach((row: any) => {
+          const val = row.status !== undefined && row.status !== null ? String(row.status).trim() : "";
+          if (val) {
+            statusCounts[val] = (statusCounts[val] || 0) + 1;
           }
         });
-        if (hasValid) {
-          timeSummary[col] = {
-            type: "numeric_duration",
-            total,
-            unit: "Minutes"
-          };
-        }
-      });
 
-      const stringDurationCols = [
-        "durasilaporan", "durasigangguan", "Durasi Ticket", "DURASI (HH:MM:SS)", 
-        "Durasi Incident", "durasistopclock", "durasigangguaminusstopclock"
-      ];
-      stringDurationCols.forEach(col => {
-        let totalSeconds = 0;
-        let hasValid = false;
-        processedRows.forEach((row: any) => {
-          if (row[col] !== undefined && row[col] !== null && row[col] !== "") {
-            const sec = parseDurationToSeconds(row[col]);
-            totalSeconds += sec;
-            hasValid = true;
+        const getTopCounts = (colName: string) => {
+          const counts: Record<string, number> = {};
+          periodRows.forEach((row: any) => {
+            const val = row[colName] !== undefined && row[colName] !== null ? String(row[colName]).trim() : "";
+            if (val) {
+              counts[val] = (counts[val] || 0) + 1;
+            }
+          });
+          return Object.entries(counts)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 50);
+        };
+
+        const sbuCounts = getTopCounts("namasbu");
+        const kpCounts = getTopCounts("namakp");
+        const customerCounts = getTopCounts("namapelanggan");
+
+        // Time Accumulations
+        const timeSummary: Record<string, any> = {};
+        
+        const timestampCols = ["waktulapor", "waktulaporanselesai", "waktugangguan2", "waktugangguanselesai"];
+        timestampCols.forEach(col => {
+          let minVal: Date | null = null;
+          let maxVal: Date | null = null;
+          periodRows.forEach((row: any) => {
+            const d = parseExcelDate(row[col]);
+            if (d) {
+              if (!minVal || d < minVal) minVal = d;
+              if (!maxVal || d > maxVal) maxVal = d;
+            }
+          });
+          if (minVal || maxVal) {
+            timeSummary[col] = {
+              type: "timestamp",
+              min: minVal ? minVal.toISOString() : null,
+              max: maxVal ? maxVal.toISOString() : null
+            };
           }
         });
-        if (hasValid) {
-          const hours = Math.floor(totalSeconds / 3600);
-          const rem = totalSeconds % 3600;
-          const minutes = Math.floor(rem / 60);
-          const seconds = rem % 60;
-          const formatted = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-          timeSummary[col] = {
-            type: "string_duration",
-            total_seconds: totalSeconds,
-            formatted
-          };
-        }
-      });
 
-      const stats = {
-        status_counts: statusCounts,
-        sbu_counts: sbuCounts,
-        kp_counts: kpCounts,
-        customer_counts: customerCounts,
-        time_summary: timeSummary
-      };
+        const numericDurationCols = ["durasilaporanmenit", "durasigangguanmenit"];
+        numericDurationCols.forEach(col => {
+          let total = 0;
+          let hasValid = false;
+          periodRows.forEach((row: any) => {
+            const val = parseFloat(row[col]);
+            if (!isNaN(val)) {
+              total += val;
+              hasValid = true;
+            }
+          });
+          if (hasValid) {
+            timeSummary[col] = {
+              type: "numeric_duration",
+              total,
+              unit: "Minutes"
+            };
+          }
+        });
 
-      saveCache({
-        type: "ticketing",
-        data: processedRows,
-        stats
+        const stringDurationCols = [
+          "durasilaporan", "durasigangguan", "Durasi Ticket", "DURASI (HH:MM:SS)", 
+          "Durasi Incident", "durasistopclock", "durasigangguaminusstopclock"
+        ];
+        stringDurationCols.forEach(col => {
+          let totalSeconds = 0;
+          let hasValid = false;
+          periodRows.forEach((row: any) => {
+            if (row[col] !== undefined && row[col] !== null && row[col] !== "") {
+              const sec = parseDurationToSeconds(row[col]);
+              totalSeconds += sec;
+              hasValid = true;
+            }
+          });
+          if (hasValid) {
+            const hours = Math.floor(totalSeconds / 3600);
+            const rem = totalSeconds % 3600;
+            const minutes = Math.floor(rem / 60);
+            const seconds = rem % 60;
+            const formatted = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+            timeSummary[col] = {
+              type: "string_duration",
+              total_seconds: totalSeconds,
+              formatted
+            };
+          }
+        });
+
+        const stats = {
+          status_counts: statusCounts,
+          sbu_counts: sbuCounts,
+          kp_counts: kpCounts,
+          customer_counts: customerCounts,
+          time_summary: timeSummary
+        };
+
+        periodStats[periodId] = stats;
+
+        // Save cache for this period inside multi-period cache
+        saveCachePeriod(periodId, periodRows, stats);
       });
 
       // Save to PostgreSQL asynchronously (so we don't block the client's quick upload response)
       (async () => {
         try {
           const p = getDbPool();
-
-          // Determine period
-          let periodId = "";
-          const periodCounts: Record<string, number> = {};
-          processedRows.forEach((row: any) => {
-            const d = parseExcelDate(row.waktulapor) || parseExcelDate(row.tanggalinsiden);
-            if (d) {
-              const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-              periodCounts[key] = (periodCounts[key] || 0) + 1;
-            }
-          });
-
-          let maxCount = 0;
-          Object.entries(periodCounts).forEach(([p, count]) => {
-            if (count > maxCount) {
-              maxCount = count;
-              periodId = p;
-            }
-          });
-
-          // Use customPeriod if provided, or default to current year-month
-          const reqCustomPeriod = req.body.customPeriod;
-          if (reqCustomPeriod && /^\d{4}-\d{2}$/.test(reqCustomPeriod)) {
-            periodId = reqCustomPeriod;
-          } else if (!periodId) {
-            const now = new Date();
-            periodId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-          }
-
-          const [yearStr, monthStr] = periodId.split("-");
-          const year = parseInt(yearStr);
-          const month = parseInt(monthStr);
-          const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-          const label = `${monthNames[month - 1]} ${year}`;
-
-          console.log(`Writing period metadata to PostgreSQL for period: ${periodId}`);
-          
           const client = await p.connect();
           try {
-            await client.query("BEGIN");
+            for (const [periodId, periodRows] of Object.entries(partitionedPeriods)) {
+              const stats = periodStats[periodId];
+              const [yearStr, monthStr] = periodId.split("-");
+              const year = parseInt(yearStr);
+              const month = parseInt(monthStr);
+              const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+              const label = `${monthNames[month - 1]} ${year}`;
 
-            // Insert or update period
-            await client.query(
-              `INSERT INTO periods (id, year, month, label, total_rows, uploaded_at, file_name, file_type, stats)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               ON CONFLICT (id) DO UPDATE SET 
-                 year = EXCLUDED.year,
-                 month = EXCLUDED.month,
-                 label = EXCLUDED.label,
-                 total_rows = EXCLUDED.total_rows,
-                 uploaded_at = EXCLUDED.uploaded_at,
-                 file_name = EXCLUDED.file_name,
-                 file_type = EXCLUDED.file_type,
-                 stats = EXCLUDED.stats`,
-              [
-                periodId,
-                year,
-                month,
-                label,
-                processedRows.length,
-                new Date().toISOString(),
-                req.file.originalname,
-                "ticketing",
-                JSON.stringify(stats)
-              ]
-            );
+              console.log(`Writing period metadata to PostgreSQL for period: ${periodId}`);
+              
+              await client.query("BEGIN");
 
-            // Since periods.id is updated, delete existing chunks for this period first
-            await client.query("DELETE FROM period_chunks WHERE period_id = $1", [periodId]);
-
-            // Chunk rows and insert
-            const chunkSize = 150;
-            for (let i = 0; i < processedRows.length; i += chunkSize) {
-              const chunkRows = processedRows.slice(i, i + chunkSize);
-              const chunkIdx = Math.floor(i / chunkSize);
-
+              // Insert or update period
               await client.query(
-                `INSERT INTO period_chunks (period_id, chunk_index, rows)
-                 VALUES ($1, $2, $3)`,
+                `INSERT INTO periods (id, year, month, label, total_rows, uploaded_at, file_name, file_type, stats)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 ON CONFLICT (id) DO UPDATE SET 
+                   year = EXCLUDED.year,
+                   month = EXCLUDED.month,
+                   label = EXCLUDED.label,
+                   total_rows = EXCLUDED.total_rows,
+                   uploaded_at = EXCLUDED.uploaded_at,
+                   file_name = EXCLUDED.file_name,
+                   file_type = EXCLUDED.file_type,
+                   stats = EXCLUDED.stats`,
                 [
                   periodId,
-                  chunkIdx,
-                  JSON.stringify(chunkRows)
+                  year,
+                  month,
+                  label,
+                  periodRows.length,
+                  new Date().toISOString(),
+                  req.file.originalname,
+                  "ticketing",
+                  JSON.stringify(stats)
                 ]
               );
-            }
 
-            await client.query("COMMIT");
-            console.log(`Successfully stored ${processedRows.length} rows to PostgreSQL in ${Math.ceil(processedRows.length / chunkSize)} chunks.`);
+              // Delete existing chunks for this period
+              await client.query("DELETE FROM period_chunks WHERE period_id = $1", [periodId]);
+
+              // Chunk rows and insert
+              const chunkSize = 150;
+              for (let i = 0; i < periodRows.length; i += chunkSize) {
+                const chunkRows = periodRows.slice(i, i + chunkSize);
+                const chunkIdx = Math.floor(i / chunkSize);
+
+                await client.query(
+                  `INSERT INTO period_chunks (period_id, chunk_index, rows)
+                   VALUES ($1, $2, $3)`,
+                  [
+                    periodId,
+                    chunkIdx,
+                    JSON.stringify(chunkRows)
+                  ]
+                );
+              }
+
+              await client.query("COMMIT");
+              console.log(`Successfully stored ${periodRows.length} rows to PostgreSQL for period ${periodId}.`);
+            }
           } catch (txErr) {
             await client.query("ROLLBACK");
-            throw txErr;
+            console.error("Database transaction failed inside upload async loop:", txErr);
           } finally {
             client.release();
           }
@@ -693,10 +776,11 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
       return res.json({
         fileType: "ticketing",
         fileName: req.file.originalname,
-        columns: processedRows.length > 0 ? Object.keys(processedRows[0]) : [],
-        totalRows: processedRows.length,
-        originalData: processedRows,
-        stats
+        columns: partitionedPeriods[dominantPeriodId].length > 0 ? Object.keys(partitionedPeriods[dominantPeriodId][0]) : [],
+        totalRows: partitionedPeriods[dominantPeriodId].length,
+        originalData: partitionedPeriods[dominantPeriodId],
+        stats: periodStats[dominantPeriodId],
+        periodId: dominantPeriodId
       });
 
     } else {
