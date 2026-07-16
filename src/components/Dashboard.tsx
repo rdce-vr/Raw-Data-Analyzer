@@ -252,6 +252,45 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
     return `${days}d ${remHours}h`;
   };
 
+  // Helper to format dates (supporting Excel serial numbers and string dates)
+  const formatDateVal = (val: any): string => {
+    if (val === undefined || val === null || val === "") return '-';
+    
+    let dateObj: Date | null = null;
+    if (typeof val === "number") {
+      const msSinceEpoch = (val - 25569) * 86400 * 1000;
+      dateObj = new Date(msSinceEpoch);
+    } else {
+      const s = String(val).trim();
+      const dmyRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
+      const dmyMatch = s.match(dmyRegex);
+      if (dmyMatch) {
+        const day = parseInt(dmyMatch[1], 10);
+        const month = parseInt(dmyMatch[2], 10);
+        const year = parseInt(dmyMatch[3], 10);
+        const hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+        const minutes = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+        const seconds = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+        
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          dateObj = new Date(year, month - 1, day, hours, minutes, seconds);
+        }
+      } else {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          dateObj = d;
+        }
+      }
+    }
+    
+    if (dateObj && !isNaN(dateObj.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${pad(dateObj.getDate())}/${pad(dateObj.getMonth() + 1)}/${dateObj.getFullYear()} ${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}:${pad(dateObj.getSeconds())}`;
+    }
+    
+    return String(val);
+  };
+
   // --- REPEATING TICKETS ANALYSIS DATA ---
   const repeatingStats = useMemo(() => {
     if (fileType !== 'ticketing' || !filteredData) {
@@ -1090,7 +1129,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                                           <td className="px-4 py-2.5 text-slate-600 font-semibold">{t.namasbu || '-'}</td>
                                           <td className="px-4 py-2.5 text-slate-500">{t.namakp || '-'}</td>
                                           <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">
-                                            {t.waktulapor || t.tanggalinsiden || t.waktugangguan2 || '-'}
+                                            {formatDateVal(t.waktulapor || t.tanggalinsiden || t.waktugangguan2)}
                                           </td>
                                           <td className="px-4 py-2.5 font-mono text-slate-700">
                                             {t.durasigangguan || (t.durasigangguanmenit ? `${t.durasigangguanmenit} m` : '-')}
