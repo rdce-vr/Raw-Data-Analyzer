@@ -284,6 +284,42 @@ function parseExcelDate(val: any) {
     const msSinceEpoch = (val - 25569) * 86400 * 1000;
     return new Date(msSinceEpoch);
   }
+  
+  const s = String(val).trim();
+  
+  // 1. Match DD/MM/YYYY or DD-MM-YYYY (Indonesian format) with optional time
+  const dmyRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
+  const dmyMatch = s.match(dmyRegex);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10);
+    const year = parseInt(dmyMatch[3], 10);
+    const hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+    const minutes = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+    const seconds = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+    
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return new Date(year, month - 1, day, hours, minutes, seconds);
+    }
+  }
+
+  // 2. Match YYYY-MM-DD or YYYY/MM/DD with optional time
+  const ymdRegex = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
+  const ymdMatch = s.match(ymdRegex);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10);
+    const day = parseInt(ymdMatch[3], 10);
+    const hours = ymdMatch[4] ? parseInt(ymdMatch[4], 10) : 0;
+    const minutes = ymdMatch[5] ? parseInt(ymdMatch[5], 10) : 0;
+    const seconds = ymdMatch[6] ? parseInt(ymdMatch[6], 10) : 0;
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return new Date(year, month - 1, day, hours, minutes, seconds);
+    }
+  }
+
+  // 3. Fallback to default Javascript Date parser
   const d = new Date(val);
   if (!isNaN(d.getTime())) return d;
   return null;
