@@ -474,6 +474,8 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
       id: string;
       name: string;
       ticketCount: number;
+      totalDuration: number;
+      durationCount: number;
       sids: Record<string, {
         sid: string;
         ticketCount: number;
@@ -491,11 +493,18 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
           id: custId,
           name: custName,
           ticketCount: 0,
+          totalDuration: 0,
+          durationCount: 0,
           sids: {}
         };
       }
 
       customerMap[custId].ticketCount++;
+      const durVal = parseFloat(row.durasigangguanmenit);
+      if (!isNaN(durVal)) {
+        customerMap[custId].totalDuration += durVal;
+        customerMap[custId].durationCount++;
+      }
 
       if (!customerMap[custId].sids[sid]) {
         customerMap[custId].sids[sid] = {
@@ -512,10 +521,14 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
     // Convert map to sorted array
     return Object.values(customerMap)
       .sort((a, b) => b.ticketCount - a.ticketCount) // Sort by total tickets descending
-      .map(cust => ({
-        ...cust,
-        sids: Object.values(cust.sids).sort((a, b) => b.ticketCount - a.ticketCount)
-      }));
+      .map(cust => {
+        const avgResolve = cust.durationCount > 0 ? cust.totalDuration / cust.durationCount : 0;
+        return {
+          ...cust,
+          avgResolveTime: avgResolve,
+          sids: Object.values(cust.sids).sort((a, b) => b.ticketCount - a.ticketCount)
+        };
+      });
   }, [filteredData, fileType]);
 
   const filteredGroupedCustomers = useMemo(() => {
@@ -543,11 +556,24 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
       const repeats = sid ? (sidFrequency[sid] || 1) : 1;
       return repeats > 1;
     }).sort((a: any, b: any) => {
-      const sidA = String(a.sidbaru || a.sidlama || "").trim();
-      const sidB = String(b.sidbaru || b.sidlama || "").trim();
-      const repeatsA = sidFrequency[sidA] || 1;
-      const repeatsB = sidFrequency[sidB] || 1;
-      return repeatsB - repeatsA;
+      // 1. Group by Customer Name
+      const nameA = String(a.namapelanggan || "").trim().toLowerCase();
+      const nameB = String(b.namapelanggan || "").trim().toLowerCase();
+      if (nameA !== nameB) {
+        return nameA.localeCompare(nameB);
+      }
+
+      // 2. Group by Service ID (SID) within customer
+      const sidA = String(a.sidbaru || a.sidlama || "").trim().toLowerCase();
+      const sidB = String(b.sidbaru || b.sidlama || "").trim().toLowerCase();
+      if (sidA !== sidB) {
+        return sidA.localeCompare(sidB);
+      }
+
+      // 3. Sort by Ticket ID descending
+      const idA = String(a.idtiket || "").trim();
+      const idB = String(b.idtiket || "").trim();
+      return idB.localeCompare(idA);
     });
   }, [filteredData, fileType, sidFrequency]);
 
@@ -1074,23 +1100,33 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                           </td>
                         </tr>
                       ) : (
-                        paginatedRepTickets.map((row: any, i: number) => (
-                          <tr key={i} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="px-5 py-3 font-mono font-bold text-indigo-600">{row.idtiket || '-'}</td>
-                            <td className="px-5 py-3 text-slate-800 font-extrabold truncate max-w-[180px]">{row.namapelanggan || '-'}</td>
-                            <td className="px-5 py-3 font-mono text-slate-600">{row.sidbaru || row.sidlama || '-'}</td>
-                            <td className="px-5 py-3 text-slate-700 font-bold">{row.penyebab || '-'}</td>
-                            <td className="px-5 py-3 font-mono">
-                              <span className="bg-rose-50 border border-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full font-black">
-                                {sidFrequency[String(row.sidbaru || row.sidlama || '').trim()] || 1}x Repeats
-                              </span>
-                            </td>
-                            <td className="px-5 py-3 font-mono text-slate-600">
-                              {parseFloat(row.durasigangguanmenit || 0).toLocaleString('id-ID')} m
-                            </td>
-                            <td className="px-5 py-3 font-semibold text-slate-500">{row.namasbu || '-'}</td>
-                          </tr>
-                        ))
+                        paginatedRepTickets.map((row: any, idx: number) => {
+                          const prevRow = idx > 0 ? paginatedRepTickets[idx - 1] : null;
+                          const showCustDivider = prevRow && String(row.namapelanggan || '').trim().toLowerCase() !== String(prevRow.namapelanggan || '').trim().toLowerCase();
+                          const showSidDivider = prevRow && !showCustDivider && String(row.sidbaru || row.sidlama || '').trim().toLowerCase() !== String(prevRow.sidbaru || prevRow.sidlama || '').trim().toLowerCase();
+                          
+                          let borderClass = "";
+                          if (showCustDivider) borderClass = "border-t-[3px] border-indigo-200 bg-slate-50/20";
+                          else if (showSidDivider) borderClass = "border-t border-slate-300 border-dashed bg-cyan-50/5";
+
+                          return (
+                            <tr key={idx} className={`hover:bg-slate-50/70 transition-colors ${borderClass}`}>
+                              <td className="px-5 py-3 font-mono font-bold text-indigo-600">{row.idtiket || '-'}</td>
+                              <td className="px-5 py-3 text-slate-800 font-extrabold truncate max-w-[180px]" title={row.namapelanggan}>{row.namapelanggan || '-'}</td>
+                              <td className="px-5 py-3 font-mono text-slate-600">{row.sidbaru || row.sidlama || '-'}</td>
+                              <td className="px-5 py-3 text-slate-700 font-bold">{row.penyebab || '-'}</td>
+                              <td className="px-5 py-3 font-mono">
+                                <span className="bg-rose-50 border border-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full font-black">
+                                  {sidFrequency[String(row.sidbaru || row.sidlama || '').trim()] || 1}x Repeats
+                                </span>
+                              </td>
+                              <td className="px-5 py-3 font-mono text-slate-600">
+                                {parseFloat(row.durasigangguanmenit || 0).toLocaleString('id-ID')} m
+                              </td>
+                              <td className="px-5 py-3 font-semibold text-slate-500">{row.namasbu || '-'}</td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1175,8 +1211,12 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                               ID: {cust.id}
                             </span>
                           </p>
-                          <p className="text-xs font-semibold text-slate-400 mt-1">
-                            {cust.sids.length} Service {cust.sids.length > 1 ? 'IDs' : 'ID'} (SIDs) registered
+                           <p className="text-xs font-semibold text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                            <span>{cust.sids.length} Service {cust.sids.length > 1 ? 'IDs' : 'ID'} (SIDs) registered</span>
+                            <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-300" />
+                            <span className="text-[11px] text-cyan-700 bg-cyan-50/60 border border-cyan-100/50 px-2 py-0.5 rounded-md font-bold">
+                              Avg Resolve: {formatMinutes(cust.avgResolveTime)}
+                            </span>
                           </p>
                         </div>
                       </div>
