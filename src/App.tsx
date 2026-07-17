@@ -374,7 +374,7 @@ export default function App() {
                     <div className="relative mt-4">
                       <input
                         type="file"
-                        accept=".xlsx, .xls, .csv"
+                        accept=".xlsx, .xls, .xlsb, .csv"
                         onChange={handleUploadBranchCustomers}
                         disabled={isUploadingBranch}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"

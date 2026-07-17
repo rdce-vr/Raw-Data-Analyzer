@@ -24,8 +24,8 @@ export function FileUpload({ onUploadSuccess }: FileUploadProps) {
   }, []);
 
   const uploadFile = async (file: File) => {
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
-      setError('Please upload a valid Excel or CSV file (.xlsx, .xls, .csv)');
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.xlsb') && !file.name.endsWith('.csv')) {
+      setError('Please upload a valid Excel or CSV file (.xlsx, .xls, .xlsb, .csv)');
       return;
     }
 
@@ -131,7 +131,7 @@ export function FileUpload({ onUploadSuccess }: FileUploadProps) {
           type="file"
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           onChange={handleChange}
-          accept=".xlsx, .xls, .csv"
+          accept=".xlsx, .xls, .xlsb, .csv"
           disabled={isUploading}
         />
 
@@ -178,7 +178,7 @@ export function FileUpload({ onUploadSuccess }: FileUploadProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {['.XLSX', '.XLS', '.CSV'].map((ext) => (
+            {['.XLSX', '.XLS', '.XLSB', '.CSV'].map((ext) => (
               <span
                 key={ext}
                 className="px-3 py-1 rounded-md bg-slate-100 text-slate-500 text-xs font-bold border border-slate-200"
