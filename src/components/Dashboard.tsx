@@ -692,21 +692,23 @@ export function Dashboard({
   // --- TICKETING RENDERING ---
   if (fileType === 'ticketing') {
     return (
-      <div className="w-full max-w-7xl mx-auto space-y-8 pb-12 font-sans animate-in fade-in slide-in-from-bottom-4 duration-500">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-1">
-          <div>
-            <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">{fileName}</h2>
-            <div className="flex items-center gap-2 mt-2 text-slate-500 text-sm font-semibold">
-              <Layers className="w-4.5 h-4.5 text-cyan-500" />
-              <span>Ticketing Metrics & SLA Dashboard</span>
-              <span className="w-1.5 h-1.5 bg-slate-300 rounded-full mx-1"></span>
-              <span className="text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs font-bold border border-emerald-100 shadow-sm">
-                <Activity className="w-3.5 h-3.5" /> {filteredData.length} Tickets Found
-              </span>
-            </div>
+      <div className="w-full max-w-7xl mx-auto space-y-6 pb-12 font-sans animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* Title Section */}
+        <div className="p-1">
+          <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">{fileName}</h2>
+          <div className="flex items-center gap-2 mt-2 text-slate-500 text-sm font-semibold">
+            <Layers className="w-4.5 h-4.5 text-cyan-500" />
+            <span>Ticketing Metrics & SLA Dashboard</span>
+            <span className="w-1.5 h-1.5 bg-slate-300 rounded-full mx-1"></span>
+            <span className="text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs font-bold border border-emerald-100 shadow-sm">
+              <Activity className="w-3.5 h-3.5" /> {filteredData.length} Tickets Found
+            </span>
           </div>
+        </div>
 
+        {/* Dashboard Controls Bar */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-white border border-slate-200/80 rounded-2xl shadow-sm">
+          {/* Left side: Selectors and Filters */}
           <div className="flex flex-wrap items-center gap-3">
             {/* Period Selector Filter */}
             {periods && periods.length > 0 && (
@@ -723,7 +725,7 @@ export function Dashboard({
                       if (onPeriodSelect) onPeriodSelect(val);
                     }
                   }}
-                  className="appearance-none bg-white border border-slate-300 text-slate-700 py-2.5 pl-10 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-extrabold cursor-pointer hover:bg-slate-50 transition-colors"
+                  className="appearance-none bg-slate-50 border border-slate-300 text-slate-750 py-2.5 pl-10 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-extrabold cursor-pointer hover:bg-slate-100 transition-colors"
                 >
                   {Array.from(new Set(periods.map(p => p.year || parseInt(p.id.split('-')[0])))).filter(Boolean).sort((a: any, b: any) => b - a).map((yr: any) => (
                     <optgroup key={yr} label={`Year ${yr}`} className="font-bold text-slate-900">
@@ -754,7 +756,7 @@ export function Dashboard({
               <select
                 value={selectedSBU}
                 onChange={(e) => setSelectedSBU(e.target.value)}
-                className="appearance-none bg-white border border-slate-300 text-slate-700 py-2.5 pl-4 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-semibold cursor-pointer hover:bg-slate-50 transition-colors"
+                className="appearance-none bg-slate-50 border border-slate-300 text-slate-750 py-2.5 pl-4 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-semibold cursor-pointer hover:bg-slate-100 transition-colors"
               >
                 <option value="All">All SBU Owners</option>
                 {uniqueSBUOwners.map((sbu: string) => (
@@ -772,10 +774,10 @@ export function Dashboard({
             <div className="relative">
               <button
                 onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                className={`flex items-center gap-2 px-4 py-2.5 bg-white border rounded-xl text-sm font-semibold transition-all shadow-sm active:scale-95 cursor-pointer select-none ${
+                className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-semibold transition-all shadow-sm active:scale-95 cursor-pointer select-none ${
                   limitToBranch 
                     ? 'border-cyan-500 text-cyan-600 bg-cyan-50/10 ring-1 ring-cyan-200' 
-                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                    : 'border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100'
                 }`}
               >
                 <Filter className={`w-4 h-4 ${limitToBranch ? 'text-cyan-600' : 'text-slate-500'}`} />
@@ -794,7 +796,7 @@ export function Dashboard({
                     onClick={() => setIsFilterDropdownOpen(false)}
                   />
                   {/* Dropdown Menu Container */}
-                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="absolute left-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-150">
                     <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Branch Filters</h5>
                     
                     {branchCustomers.length > 0 ? (
@@ -813,18 +815,21 @@ export function Dashboard({
                     ) : (
                       <div className="p-3 text-center bg-slate-50 border border-slate-150 border-dashed rounded-xl">
                         <span className="text-[11px] text-slate-450 font-bold block">No Branch List</span>
-                        <span className="text-[9px] text-slate-400 font-medium block mt-0.5">Upload a customer list in the Dataset Manager first.</span>
+                        <span className="text-[9px] text-slate-405 font-medium block mt-0.5">Upload a customer list in the Dataset Manager first.</span>
                       </div>
                     )}
                   </div>
                 </>
               )}
             </div>
+          </div>
 
+          {/* Right side: Actions */}
+          <div className="flex items-center gap-3">
             {/* Export Action */}
             <button
               onClick={handleExportTicketing}
-              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm transition-all duration-200 shadow-md shadow-emerald-500/10 active:scale-95 cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-all duration-200 shadow-md shadow-emerald-500/10 active:scale-95 cursor-pointer"
             >
               <FileSpreadsheet className="w-4 h-4" />
               <span>Export filtered SBU</span>
