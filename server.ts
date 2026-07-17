@@ -460,18 +460,27 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
             // Chunk rows and insert
             const chunkSize = 150;
+            const chunksToInsert: { periodId: string; chunkIdx: number; rowsJson: string }[] = [];
             for (let i = 0; i < periodRows.length; i += chunkSize) {
               const chunkRows = periodRows.slice(i, i + chunkSize);
               const chunkIdx = Math.floor(i / chunkSize);
+              chunksToInsert.push({
+                periodId,
+                chunkIdx,
+                rowsJson: JSON.stringify(chunkRows)
+              });
+            }
 
+            if (chunksToInsert.length > 0) {
+              const placeholders = chunksToInsert.map((_, idx) => {
+                const base = idx * 3;
+                return `($${base + 1}, $${base + 2}, $${base + 3})`;
+              }).join(", ");
+              const values = chunksToInsert.flatMap(c => [c.periodId, c.chunkIdx, c.rowsJson]);
               await client.query(
                 `INSERT INTO period_chunks (period_id, chunk_index, rows)
-                 VALUES ($1, $2, $3)`,
-                [
-                  periodId,
-                  chunkIdx,
-                  JSON.stringify(chunkRows)
-                ]
+                 VALUES ${placeholders}`,
+                values
               );
             }
 
