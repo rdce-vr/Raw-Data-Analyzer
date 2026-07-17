@@ -46,6 +46,9 @@ interface DashboardProps {
   activePeriodId?: string | null;
   onPeriodSelect?: (periodId: string) => void;
   onYearSelect?: (year: number) => void;
+  branchCustomers: string[];
+  limitToBranch: boolean;
+  setLimitToBranch: (val: boolean) => void;
 }
 
 const COLORS = ['#00AFF0', '#fbbf24', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4'];
@@ -117,7 +120,16 @@ export function getFriendlyLabel(key: string): string {
     .join(' ');
 }
 
-export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodSelect, onYearSelect }: DashboardProps) {
+export function Dashboard({ 
+  data, 
+  periods = [], 
+  activePeriodId = null, 
+  onPeriodSelect, 
+  onYearSelect,
+  branchCustomers = [],
+  limitToBranch = false,
+  setLimitToBranch
+}: DashboardProps) {
   if (!data) return null;
 
   const {
@@ -129,74 +141,18 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
     groupingInfo,
     fileType,
     stats,
-    totalRows
+    totalRows,
+    isYearly,
+    year
   } = data;
 
   // --- TICKETING DASHBOARD ---
   const [selectedSBU, setSelectedSBU] = useState('All');
-  const [branchCustomers, setBranchCustomers] = useState<string[]>([]);
-  const [limitToBranch, setLimitToBranch] = useState(false);
-
-  // Fetch branch customer list on component mount
-  useEffect(() => {
-    fetch('/api/branch-customers')
-      .then(res => {
-        if (res.ok) return res.json();
-        throw new Error('Failed to load branch customer list');
-      })
-      .then(data => {
-        if (Array.isArray(data.values)) {
-          setBranchCustomers(data.values);
-        }
-      })
-      .catch(err => console.error('Error fetching branch customers:', err));
-  }, []);
-
-  const handleUploadBranchCustomers = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    const file = e.target.files[0];
-    
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await fetch('/api/branch-customers', {
-        method: 'POST',
-        body: formData
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || 'Upload failed');
-      }
-      const result = await response.json();
-      setBranchCustomers(result.values || []);
-      setLimitToBranch(true);
-    } catch (err: any) {
-      alert('Failed to upload branch customer list: ' + err.message);
-    }
-  };
-
-  const handleDeleteBranchCustomers = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (!confirm('Are you sure you want to clear the registered Jawa Tengah branch customer list?')) return;
-    
-    try {
-      const response = await fetch('/api/branch-customers', {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        setBranchCustomers([]);
-        setLimitToBranch(false);
-      }
-    } catch (err: any) {
-      console.error('Error clearing branch customer list:', err);
-    }
-  };
 
   // Hierarchy expand states
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
   const [expandedSIDs, setExpandedSIDs] = useState<Record<string, boolean>>({});
+  const [expandedRepSIDs, setExpandedRepSIDs] = useState<Record<string, boolean>>({});
 
   // Grouped customer list pagination & search
   const [custSearchQuery, setCustSearchQuery] = useState('');
@@ -306,7 +262,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
     };
   }, [filteredData, stats, fileType]);
 
-  const activeStats = selectedSBU === 'All' && stats ? stats : filteredStats;
+  const activeStats = (selectedSBU === 'All' && !limitToBranch && stats) ? stats : filteredStats;
   const statusCounts = activeStats?.status_counts || {};
   
   const statusChartData = useMemo(() => {
@@ -549,57 +505,107 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
   }, [filteredGroupedCustomers, custPage]);
 
   // --- DETAILED REPEATING TICKETS LOG ---
-  const detailedRepeatingTickets = useMemo(() => {
+  const repeatingSIDGroups = useMemo(() => {
     if (fileType !== 'ticketing') return [];
-    return filteredData.filter((row: any) => {
+
+    const groupsMap: Record<string, {
+      sid: string;
+      customerName: string;
+      repeats: number;
+      sbuOwner: string;
+      dominantCause: string;
+      totalDuration: number;
+      tickets: any[];
+    }> = {};
+
+    filteredData.forEach((row: any) => {
       const sid = String(row.sidbaru || row.sidlama || "").trim();
-      const repeats = sid ? (sidFrequency[sid] || 1) : 1;
-      return repeats > 1;
-    }).sort((a: any, b: any) => {
-      // 1. Group by Customer Name
-      const nameA = String(a.namapelanggan || "").trim().toLowerCase();
-      const nameB = String(b.namapelanggan || "").trim().toLowerCase();
-      if (nameA !== nameB) {
-        return nameA.localeCompare(nameB);
+      if (!sid) return;
+
+      const repeats = sidFrequency[sid] || 1;
+      if (repeats <= 1) return; // Only repeating SIDs
+
+      if (!groupsMap[sid]) {
+        groupsMap[sid] = {
+          sid,
+          customerName: String(row.namapelanggan || "Unknown Customer").trim(),
+          repeats,
+          sbuOwner: String(row.namasbu || "-").trim(),
+          dominantCause: String(row.penyebab || "-").trim(),
+          totalDuration: 0,
+          tickets: []
+        };
       }
 
-      // 2. Group by Service ID (SID) within customer
-      const sidA = String(a.sidbaru || a.sidlama || "").trim().toLowerCase();
-      const sidB = String(b.sidbaru || b.sidlama || "").trim().toLowerCase();
-      if (sidA !== sidB) {
-        return sidA.localeCompare(sidB);
+      groupsMap[sid].tickets.push(row);
+      const dur = parseFloat(row.durasigangguanmenit);
+      if (!isNaN(dur)) {
+        groupsMap[sid].totalDuration += dur;
       }
+    });
 
-      // 3. Sort by Ticket ID descending
-      const idA = String(a.idtiket || "").trim();
-      const idB = String(b.idtiket || "").trim();
-      return idB.localeCompare(idA);
+    // Determine dominant cause for each SID
+    Object.values(groupsMap).forEach(group => {
+      const causeCounts: Record<string, number> = {};
+      group.tickets.forEach(t => {
+        const c = String(t.penyebab || "-").trim();
+        causeCounts[c] = (causeCounts[c] || 0) + 1;
+      });
+      let maxCount = 0;
+      let dominant = "-";
+      Object.entries(causeCounts).forEach(([cause, count]) => {
+        if (count > maxCount) {
+          maxCount = count;
+          dominant = cause;
+        }
+      });
+      group.dominantCause = dominant;
+      
+      // Sort tickets within SID descending by ticket ID
+      group.tickets.sort((a: any, b: any) => {
+        const idA = String(a.idtiket || "").trim();
+        const idB = String(b.idtiket || "").trim();
+        return idB.localeCompare(idA);
+      });
+    });
+
+    // Convert map to array and sort by repeat count descending
+    return Object.values(groupsMap).sort((a, b) => {
+      if (b.repeats !== a.repeats) {
+        return b.repeats - a.repeats;
+      }
+      return a.customerName.localeCompare(b.customerName);
     });
   }, [filteredData, fileType, sidFrequency]);
 
-  const filteredRepTickets = useMemo(() => {
-    if (!repSearchQuery) return detailedRepeatingTickets;
+  const filteredRepSIDGroups = useMemo(() => {
+    if (!repSearchQuery) return repeatingSIDGroups;
     const q = repSearchQuery.toLowerCase().trim();
-    return detailedRepeatingTickets.filter((row: any) => {
+    return repeatingSIDGroups.filter(g => {
       return (
-        String(row.namapelanggan || '').toLowerCase().includes(q) ||
-        String(row.sidbaru || row.sidlama || '').toLowerCase().includes(q) ||
-        String(row.idtiket || '').toLowerCase().includes(q) ||
-        String(row.penyebab || '').toLowerCase().includes(q)
+        g.sid.toLowerCase().includes(q) ||
+        g.customerName.toLowerCase().includes(q) ||
+        g.sbuOwner.toLowerCase().includes(q) ||
+        g.dominantCause.toLowerCase().includes(q) ||
+        g.tickets.some(t => String(t.idtiket || '').toLowerCase().includes(q))
       );
     });
-  }, [detailedRepeatingTickets, repSearchQuery]);
+  }, [repeatingSIDGroups, repSearchQuery]);
 
-  const totalRepPages = Math.ceil(filteredRepTickets.length / repPerPage) || 1;
-  const paginatedRepTickets = useMemo(() => {
+  const totalRepPages = Math.ceil(filteredRepSIDGroups.length / repPerPage) || 1;
+  const paginatedRepSIDGroups = useMemo(() => {
     const start = (repPage - 1) * repPerPage;
-    return filteredRepTickets.slice(start, start + repPerPage);
-  }, [filteredRepTickets, repPage]);
+    return filteredRepSIDGroups.slice(start, start + repPerPage);
+  }, [filteredRepSIDGroups, repPage]);
 
   const handleExportTicketing = async () => {
     try {
       const sbuParam = selectedSBU !== 'All' ? `&sbu_filter=${encodeURIComponent(selectedSBU)}` : '';
-      const response = await fetch(`/api/export?report_type=ticketing${sbuParam}`);
+      const periodParam = activePeriodId 
+        ? `&periodId=${activePeriodId}` 
+        : `&year=${year || ''}`;
+
+      const response = await fetch(`/api/export?report_type=ticketing${sbuParam}${periodParam}`);
       if (!response.ok) throw new Error('Export failed');
 
       const blob = await response.blob();
@@ -769,27 +775,11 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                   onChange={(e) => setLimitToBranch(e.target.checked)}
                   className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
                 />
-                <span className="text-slate-700 text-sm font-semibold">JT Branch ({branchCustomers.length})</span>
-                <button
-                  onClick={handleDeleteBranchCustomers}
-                  className="text-rose-500 hover:text-rose-700 ml-1.5 focus:outline-none flex items-center justify-center p-0.5 rounded hover:bg-rose-50 cursor-pointer"
-                  title="Clear Customer List"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                <span className="text-slate-700 text-sm font-semibold">JT Branch Filter ({branchCustomers.length})</span>
               </label>
             ) : (
-              <div className="relative">
-                <input
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  onChange={handleUploadBranchCustomers}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <button className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold rounded-xl text-sm transition-all shadow-sm active:scale-95 cursor-pointer">
-                  <Upload className="w-4 h-4 text-slate-500" />
-                  <span>Upload JT Branch Customers</span>
-                </button>
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 select-none" title="Configure list in Dataset Manager">
+                <span>JT Filter Inactive</span>
               </div>
             )}
 
@@ -1064,7 +1054,7 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                       <AlertTriangle className="w-4 h-4 text-rose-500 animate-bounce" /> DETAILED REPEATING TICKETS REGISTRY
                     </h4>
                     <p className="text-xs text-slate-500 mt-1">
-                      Showing {filteredRepTickets.length} repeating tickets matching criteria
+                      Showing {filteredRepSIDGroups.length} unique Service IDs with repeating tickets
                     </p>
                   </div>
                   <div className="relative max-w-xs w-full">
@@ -1079,57 +1069,92 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                   </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                      <tr>
-                        <th className="px-5 py-3 font-extrabold text-[10px]">TICKET ID</th>
-                        <th className="px-5 py-3 font-extrabold text-[10px]">CUSTOMER NAME</th>
-                        <th className="px-5 py-3 font-extrabold text-[10px]">SERVICE ID (SID)</th>
-                        <th className="px-5 py-3 font-extrabold text-[10px]">CAUSE</th>
-                        <th className="px-5 py-3 font-extrabold text-[10px]">REPEAT FREQ</th>
-                        <th className="px-5 py-3 font-extrabold text-[10px]">DURATION (MIN)</th>
-                        <th className="px-5 py-3 font-extrabold text-[10px]">SBU OWNER</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {paginatedRepTickets.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-5 py-8 text-center text-slate-400 font-semibold">
-                            No matching repeating tickets found.
-                          </td>
-                        </tr>
-                      ) : (
-                        paginatedRepTickets.map((row: any, idx: number) => {
-                          const prevRow = idx > 0 ? paginatedRepTickets[idx - 1] : null;
-                          const showCustDivider = prevRow && String(row.namapelanggan || '').trim().toLowerCase() !== String(prevRow.namapelanggan || '').trim().toLowerCase();
-                          const showSidDivider = prevRow && !showCustDivider && String(row.sidbaru || row.sidlama || '').trim().toLowerCase() !== String(prevRow.sidbaru || prevRow.sidlama || '').trim().toLowerCase();
-                          
-                          let borderClass = "";
-                          if (showCustDivider) borderClass = "border-t-[3px] border-indigo-200 bg-slate-50/20";
-                          else if (showSidDivider) borderClass = "border-t border-slate-300 border-dashed bg-cyan-50/5";
+                <div className="space-y-3">
+                  {paginatedRepSIDGroups.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 font-semibold bg-white border border-slate-200 rounded-xl">
+                      No matching repeating tickets found.
+                    </div>
+                  ) : (
+                    paginatedRepSIDGroups.map((group) => {
+                      const isExpanded = !!expandedRepSIDs[group.sid];
+                      return (
+                        <div key={group.sid} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden transition-all duration-200">
+                          {/* SID Header Row */}
+                          <div 
+                            onClick={() => setExpandedRepSIDs(prev => ({ ...prev, [group.sid]: !isExpanded }))}
+                            className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                              <span className="bg-indigo-50 text-indigo-750 font-mono font-bold text-xs px-2.5 py-1 rounded-lg border border-indigo-100">
+                                {group.sid}
+                              </span>
+                              <div className="space-y-0.5">
+                                <span className="font-extrabold text-slate-800 text-sm block sm:inline">{group.customerName}</span>
+                                <span className="text-[10px] text-slate-400 font-semibold sm:ml-2 block sm:inline">({group.sbuOwner})</span>
+                              </div>
+                            </div>
 
-                          return (
-                            <tr key={idx} className={`hover:bg-slate-50/70 transition-colors ${borderClass}`}>
-                              <td className="px-5 py-3 font-mono font-bold text-indigo-600">{row.idtiket || '-'}</td>
-                              <td className="px-5 py-3 text-slate-800 font-extrabold truncate max-w-[180px]" title={row.namapelanggan}>{row.namapelanggan || '-'}</td>
-                              <td className="px-5 py-3 font-mono text-slate-600">{row.sidbaru || row.sidlama || '-'}</td>
-                              <td className="px-5 py-3 text-slate-700 font-bold">{row.penyebab || '-'}</td>
-                              <td className="px-5 py-3 font-mono">
-                                <span className="bg-rose-50 border border-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full font-black">
-                                  {sidFrequency[String(row.sidbaru || row.sidlama || '').trim()] || 1}x Repeats
+                            <div className="flex flex-wrap items-center gap-3 sm:gap-6">
+                              <div className="text-left md:text-right">
+                                <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Dominant Cause</span>
+                                <span className="text-xs text-slate-700 font-bold block">{group.dominantCause}</span>
+                              </div>
+
+                              <div className="text-left md:text-right">
+                                <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Total Duration</span>
+                                <span className="text-xs font-mono text-slate-700 font-bold block">
+                                  {group.totalDuration.toLocaleString('id-ID')} mins ({formatMinutes(group.totalDuration)})
                                 </span>
-                              </td>
-                              <td className="px-5 py-3 font-mono text-slate-600">
-                                {parseFloat(row.durasigangguanmenit || 0).toLocaleString('id-ID')} m
-                              </td>
-                              <td className="px-5 py-3 font-semibold text-slate-500">{row.namasbu || '-'}</td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <span className="bg-rose-50 border border-rose-100 text-rose-700 px-3 py-1 rounded-full font-black text-xs">
+                                  {group.repeats}x Repeats
+                                </span>
+                                <div className="text-slate-400 p-1">
+                                  <ChevronDown className={`w-4 h-4 transform transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-650' : ''}`} />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Expanded Tickets Table */}
+                          {isExpanded && (
+                            <div className="border-t border-slate-100 bg-slate-50/30 p-4 animate-in fade-in duration-200">
+                              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-slate-50 text-slate-505 font-bold uppercase border-b border-slate-200">
+                                    <tr>
+                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Ticket ID</th>
+                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Open Date</th>
+                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Duration</th>
+                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Ticket Cause</th>
+                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">SBU Owner</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                                    {group.tickets.map((ticket: any) => (
+                                      <tr key={ticket.idtiket} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-4 py-2.5 font-mono font-bold text-indigo-600">{ticket.idtiket}</td>
+                                        <td className="px-4 py-2.5 text-slate-500">
+                                          {ticket.waktugangguan2 || ticket.waktulapor || ticket.tanggalinsiden || '-'}
+                                        </td>
+                                        <td className="px-4 py-2.5 font-mono text-slate-600">
+                                          {parseFloat(ticket.durasigangguanmenit || 0).toLocaleString('id-ID')} m ({formatMinutes(parseFloat(ticket.durasigangguanmenit || 0))})
+                                        </td>
+                                        <td className="px-4 py-2.5 text-slate-800 font-bold">{ticket.penyebab || '-'}</td>
+                                        <td className="px-4 py-2.5 text-slate-500 font-semibold">{ticket.namasbu || '-'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
 
                 {/* Pagination Controls */}

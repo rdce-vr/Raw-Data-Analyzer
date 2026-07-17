@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PlnLogo } from './components/PlnLogo';
 import { FileUpload } from './components/FileUpload';
 import { Dashboard } from './components/Dashboard';
-import { RefreshCw, FileSpreadsheet, Github, Calendar, Trash2, Database, FolderOpen, ArrowRight, Loader2 } from 'lucide-react';
+import { RefreshCw, FileSpreadsheet, Github, Calendar, Trash2, Database, FolderOpen, ArrowRight, Loader2, Upload } from 'lucide-react';
 
 export default function App() {
   const [data, setData] = useState<any>(null);
@@ -13,6 +13,69 @@ export default function App() {
   const [yearlyData, setYearlyData] = useState<any>(null);
   const [isLoadingYearly, setIsLoadingYearly] = useState<boolean>(false);
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
+  const [branchCustomers, setBranchCustomers] = useState<string[]>([]);
+  const [limitToBranch, setLimitToBranch] = useState<boolean>(false);
+  const [isUploadingBranch, setIsUploadingBranch] = useState<boolean>(false);
+
+  // Fetch branch customer list on component mount
+  useEffect(() => {
+    fetch('/api/branch-customers')
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Failed to load branch customer list');
+      })
+      .then(data => {
+        if (Array.isArray(data.values)) {
+          setBranchCustomers(data.values);
+        }
+      })
+      .catch(err => console.error('Error fetching branch customers:', err));
+  }, []);
+
+  const handleUploadBranchCustomers = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    setIsUploadingBranch(true);
+
+    try {
+      const response = await fetch('/api/branch-customers', {
+        method: 'POST',
+        body: formData
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Upload failed');
+      }
+      const result = await response.json();
+      setBranchCustomers(result.values || []);
+      setLimitToBranch(true);
+    } catch (err: any) {
+      alert('Failed to upload branch customer list: ' + err.message);
+    } finally {
+      setIsUploadingBranch(false);
+    }
+  };
+
+  const handleDeleteBranchCustomers = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!confirm('Are you sure you want to clear the registered Jawa Tengah branch customer list?')) return;
+    
+    try {
+      const response = await fetch('/api/branch-customers', {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        setBranchCustomers([]);
+        setLimitToBranch(false);
+      }
+    } catch (err: any) {
+      console.error('Error clearing branch customer list:', err);
+    }
+  };
 
   const fetchPeriods = async () => {
     try {
@@ -48,39 +111,20 @@ export default function App() {
   const loadYearlyData = async (year: number) => {
     setIsLoadingYearly(true);
     try {
-      const yearPeriods = periods.filter(p => (p.year || parseInt(p.id.split('-')[0])) === year);
-      if (yearPeriods.length === 0) {
+      const response = await fetch(`/api/yearly-data?year=${year}`);
+      if (response.ok) {
+        const result = await response.json();
+        setYearlyData({
+          ...result,
+          isYearly: true,
+          year
+        });
+      } else {
         setYearlyData(null);
-        return;
       }
-
-      const promises = yearPeriods.map(p =>
-        fetch(`/api/period-data?periodId=${p.id}`).then(res => {
-          if (!res.ok) throw new Error(`Failed to load ${p.id}`);
-          return res.json();
-        })
-      );
-
-      const results = await Promise.all(promises);
-
-      let allRows: any[] = [];
-      results.forEach(res => {
-        if (res && Array.isArray(res.originalData)) {
-          allRows = allRows.concat(res.originalData);
-        }
-      });
-
-      setYearlyData({
-        fileType: 'ticketing',
-        fileName: `Yearly Dashboard Summary - ${year}`,
-        originalData: allRows,
-        totalRows: allRows.length,
-        stats: null, // Let Dashboard calculate stats on the fly
-        isYearly: true,
-        year
-      });
     } catch (err) {
       console.error("Failed to load yearly aggregated data:", err);
+      setYearlyData(null);
     } finally {
       setIsLoadingYearly(false);
     }
@@ -90,7 +134,7 @@ export default function App() {
     if (selectedYear) {
       loadYearlyData(selectedYear);
     }
-  }, [selectedYear]);
+  }, [selectedYear, periods]);
 
   const handleUploadSuccess = (payload: any) => {
     setData(payload);
@@ -292,13 +336,69 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Left columns: File Upload */}
-                  <div className="lg:col-span-2 p-6 border border-slate-200/80 rounded-2xl shadow-sm glass-card">
+                  {/* Column 1: File Upload */}
+                  <div className="p-6 border border-slate-200/80 rounded-2xl shadow-sm flex flex-col glass-card">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Upload New Month</h4>
                     <FileUpload onUploadSuccess={handleUploadSuccess} />
                   </div>
 
-                  {/* Right column: Saved Datasets Management */}
+                  {/* Column 2: Branch Filter Management */}
+                  <div className="p-6 border border-slate-200/80 rounded-2xl shadow-sm flex flex-col glass-card justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Jawa Tengah Branch Filter</h4>
+                      <p className="text-xs text-slate-500 font-semibold leading-relaxed mb-4">
+                        Upload a spreadsheet containing a list of customer names, Customer IDs, or Service IDs (SIDs) belonging to the Jawa Tengah branch.
+                      </p>
+                      
+                      {branchCustomers.length > 0 ? (
+                        <div className="p-3 bg-cyan-50/50 border border-cyan-100 rounded-xl flex items-center justify-between">
+                          <div>
+                            <span className="font-extrabold text-xs text-cyan-800 block">Jawa Tengah Filter List</span>
+                            <span className="text-[10px] text-cyan-600 font-bold block mt-0.5">{branchCustomers.length} entries registered</span>
+                          </div>
+                          <button
+                            onClick={handleDeleteBranchCustomers}
+                            className="p-1.5 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-lg transition-colors cursor-pointer"
+                            title="Delete filter list"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="p-6 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center text-slate-450 text-xs font-semibold">
+                          No filter list uploaded yet.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="relative mt-4">
+                      <input
+                        type="file"
+                        accept=".xlsx, .xls, .csv"
+                        onChange={handleUploadBranchCustomers}
+                        disabled={isUploadingBranch}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <button 
+                        disabled={isUploadingBranch}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-cyan-500/10 active:scale-95 cursor-pointer disabled:opacity-50"
+                      >
+                        {isUploadingBranch ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Uploading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4" />
+                            <span>Upload JT Branch List</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Column 3: Saved Datasets Management */}
                   <div className="p-6 border border-slate-200/80 rounded-2xl shadow-sm flex flex-col glass-card">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Saved Datasets ({periods.length})</h4>
                     <div className="flex-grow space-y-3 max-h-[350px] overflow-y-auto pr-1">
@@ -351,6 +451,9 @@ export default function App() {
                 activePeriodId={activePeriodId}
                 onPeriodSelect={handlePeriodSelect}
                 onYearSelect={setSelectedYear}
+                branchCustomers={branchCustomers}
+                limitToBranch={limitToBranch}
+                setLimitToBranch={setLimitToBranch}
               />
             )}
           </div>

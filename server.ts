@@ -84,18 +84,31 @@ function saveCache(data: any) {
   }
 }
 
-// Helper to load from JSON cache with automatic migration from single-period to multi-period
+// Load a specific period's row data from its dedicated cache file
+function loadCachePeriodData(periodId: string): any[] {
+  const file = path.join(process.cwd(), `cache_data_${periodId}.json`);
+  try {
+    if (fs.existsSync(file)) {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    }
+  } catch (err) {
+    console.error(`Error loading cache period data for ${periodId}:`, err);
+  }
+  return [];
+}
+
+// Helper to load from JSON cache with automatic migration and data partitioning
 function loadCache(): any {
   try {
     if (fs.existsSync(CACHE_FILE)) {
       const cache = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
-      // Migrate old single-period ticketing format to multi-period
+      
+      // 1. Migrate old single-period ticketing format to multi-period
       if (cache && cache.type === "ticketing" && cache.data) {
         console.log("Migrating legacy single-period ticketing cache to multi-period...");
         const rows = cache.data || [];
         const stats = cache.stats || {};
 
-        // Find period ID from rows
         let periodId = "";
         const periodCounts: Record<string, number> = {};
         rows.forEach((row: any) => {
@@ -119,17 +132,37 @@ function loadCache(): any {
           periodId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         }
 
+        // Save rows separately
+        const file = path.join(process.cwd(), `cache_data_${periodId}.json`);
+        fs.writeFileSync(file, JSON.stringify(rows), "utf8");
+
         const migratedCache = {
           type: "multi-period-ticketing",
           periods: {
             [periodId]: {
-              data: rows,
               stats: stats
             }
           }
         };
         saveCache(migratedCache);
         return migratedCache;
+      }
+      
+      // 2. Migrate existing multi-period cache: extract large data arrays to separate files
+      if (cache && cache.type === "multi-period-ticketing" && cache.periods) {
+        let modified = false;
+        Object.entries(cache.periods).forEach(([periodId, content]: [string, any]) => {
+          if (content && content.data) {
+            console.log(`Extracting period data array for ${periodId} to dedicated cache file...`);
+            const file = path.join(process.cwd(), `cache_data_${periodId}.json`);
+            fs.writeFileSync(file, JSON.stringify(content.data), "utf8");
+            delete content.data;
+            modified = true;
+          }
+        });
+        if (modified) {
+          saveCache(cache);
+        }
       }
       return cache;
     }
@@ -152,11 +185,17 @@ function saveCachePeriod(periodId: string, data: any[], stats: any) {
     if (!cache.periods) {
       cache.periods = {};
     }
+    
+    // Store only stats in the main cache file
     cache.periods[periodId] = {
-      data,
       stats
     };
     saveCache(cache);
+
+    // Save actual data array in a separate file
+    const file = path.join(process.cwd(), `cache_data_${periodId}.json`);
+    fs.writeFileSync(file, JSON.stringify(data), "utf8");
+    console.log(`Saved ${data.length} rows to dedicated cache: ${file}`);
   } catch (err) {
     console.error("Error saving period to cache:", err);
   }
@@ -170,8 +209,13 @@ function deleteCachePeriod(periodId: string) {
       if (cache.periods[periodId]) {
         delete cache.periods[periodId];
         saveCache(cache);
-        console.log(`Deleted period ${periodId} from multi-period cache.`);
+        console.log(`Deleted period ${periodId} from metadata cache.`);
       }
+    }
+    const file = path.join(process.cwd(), `cache_data_${periodId}.json`);
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+      console.log(`Deleted cache file: ${file}`);
     }
   } catch (err) {
     console.error("Error deleting period from cache:", err);
@@ -202,7 +246,8 @@ async function seedDbIfEmpty() {
         await client.query("BEGIN");
 
         for (const [periodId, periodContent] of Object.entries(cache.periods)) {
-          const { data: rows, stats } = periodContent as any;
+          const { stats } = periodContent as any;
+          const rows = loadCachePeriodData(periodId);
           const [yearStr, monthStr] = periodId.split("-");
           const year = parseInt(yearStr);
           const month = parseInt(monthStr);
@@ -485,50 +530,133 @@ app.get("/api/period-data", async (req, res) => {
     if (!periodId || typeof periodId !== "string") {
       return res.status(400).json({ detail: "periodId parameter is required" });
     }
-    const p = getDbPool();
-
-    // Get period metadata
-    const periodRes = await p.query(
-      `SELECT id, year, month, label, total_rows as "totalRows", 
-              uploaded_at as "uploadedAt", file_name as "fileName", 
-              file_type as "fileType", stats 
-       FROM periods 
-       WHERE id = $1`,
-      [periodId]
-    );
     
-    if (periodRes.rowCount === 0) {
-      return res.status(404).json({ detail: `Period ${periodId} not found` });
-    }
-    const periodData = periodRes.rows[0];
-
-    // Fetch chunks and aggregate them.
-    const chunksRes = await p.query(
-      `SELECT chunk_index as "chunkIndex", rows 
-       FROM period_chunks 
-       WHERE period_id = $1 
-       ORDER BY chunk_index ASC`,
-      [periodId]
-    );
-
-    let aggregatedRows: any[] = [];
-    chunksRes.rows.forEach((c: any) => {
-      if (Array.isArray(c.rows)) {
-        aggregatedRows = aggregatedRows.concat(c.rows);
+    try {
+      const p = getDbPool();
+      // Get period metadata
+      const periodRes = await p.query(
+        `SELECT id, year, month, label, total_rows as "totalRows", 
+                uploaded_at as "uploadedAt", file_name as "fileName", 
+                file_type as "fileType", stats 
+         FROM periods 
+         WHERE id = $1`,
+        [periodId]
+      );
+      
+      if (periodRes.rowCount === 0) {
+        return res.status(404).json({ detail: `Period ${periodId} not found` });
       }
-    });
+      const periodData = periodRes.rows[0];
 
-    return res.json({
-      fileType: periodData.fileType || "ticketing",
-      fileName: periodData.fileName || "Imported Database",
-      columns: aggregatedRows.length > 0 ? Object.keys(aggregatedRows[0]) : [],
-      totalRows: periodData.totalRows || aggregatedRows.length,
-      originalData: aggregatedRows,
-      stats: periodData.stats,
-      periodId
-    });
+      // Fetch chunks and aggregate them.
+      const chunksRes = await p.query(
+        `SELECT chunk_index as "chunkIndex", rows 
+         FROM period_chunks 
+         WHERE period_id = $1 
+         ORDER BY chunk_index ASC`,
+        [periodId]
+      );
+
+      let aggregatedRows: any[] = [];
+      chunksRes.rows.forEach((c: any) => {
+        if (Array.isArray(c.rows)) {
+          aggregatedRows = aggregatedRows.concat(c.rows);
+        }
+      });
+
+      return res.json({
+        fileType: periodData.fileType || "ticketing",
+        fileName: periodData.fileName || "Imported Database",
+        columns: aggregatedRows.length > 0 ? Object.keys(aggregatedRows[0]) : [],
+        totalRows: periodData.totalRows || aggregatedRows.length,
+        originalData: aggregatedRows,
+        stats: periodData.stats,
+        periodId
+      });
+    } catch (dbErr) {
+      console.log("Database lookup failed, falling back to local JSON cache for period data:", dbErr);
+      const cache = loadCache();
+      if (!cache || !cache.periods || !cache.periods[periodId]) {
+        return res.status(404).json({ detail: `Period ${periodId} not found in cache` });
+      }
+      const periodMetadata = cache.periods[periodId];
+      const rows = loadCachePeriodData(periodId);
+      return res.json({
+        fileType: "ticketing",
+        fileName: "Imported Cache",
+        columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+        totalRows: rows.length,
+        originalData: rows,
+        stats: periodMetadata.stats,
+        periodId
+      });
+    }
   } catch (err: any) {
     console.error("Error fetching period data:", err);
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// Fetch aggregated yearly data from PostgreSQL or local cache in a single request
+app.get("/api/yearly-data", async (req, res) => {
+  try {
+    const { year } = req.query;
+    if (!year) {
+      return res.status(400).json({ detail: "year parameter is required" });
+    }
+    const yearNum = parseInt(String(year), 10);
+
+    try {
+      const p = getDbPool();
+      const result = await p.query(
+        `SELECT pc.rows 
+         FROM period_chunks pc
+         JOIN periods per ON pc.period_id = per.id
+         WHERE per.year = $1
+         ORDER BY per.month ASC, pc.chunk_index ASC`,
+        [yearNum]
+      );
+
+      let allRows: any[] = [];
+      result.rows.forEach((row: any) => {
+        if (Array.isArray(row.rows)) {
+          allRows = allRows.concat(row.rows);
+        }
+      });
+
+      return res.json({
+        fileType: "ticketing",
+        fileName: `Yearly Dashboard Summary - ${yearNum}`,
+        columns: allRows.length > 0 ? Object.keys(allRows[0]) : [],
+        totalRows: allRows.length,
+        originalData: allRows,
+        stats: null,
+        periodId: `yearly-${yearNum}`
+      });
+    } catch (dbErr) {
+      console.log("Database lookup failed, falling back to local JSON cache for yearly data:", dbErr);
+      const cache = loadCache();
+      let allRows: any[] = [];
+      if (cache && cache.periods) {
+        Object.entries(cache.periods).forEach(([periodId, content]: [string, any]) => {
+          const [yrStr] = periodId.split("-");
+          if (parseInt(yrStr) === yearNum) {
+            allRows = allRows.concat(loadCachePeriodData(periodId));
+          }
+        });
+      }
+      return res.json({
+        fileType: "ticketing",
+        fileName: `Yearly Dashboard Summary - ${yearNum}`,
+        columns: allRows.length > 0 ? Object.keys(allRows[0]) : [],
+        totalRows: allRows.length,
+        originalData: allRows,
+        stats: null,
+        periodId: `yearly-${yearNum}`
+      });
+    }
+  } catch (err: any) {
+    console.error("Error fetching yearly data:", err);
     return res.status(500).json({ detail: err.message });
   }
 });
