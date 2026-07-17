@@ -41,6 +41,13 @@ import {
   Filter
 } from 'lucide-react';
 
+import { COLORS, PIE_COLORS, getFriendlyLabel, formatMinutes, formatDateVal } from './dashboard/DashboardUtils';
+import { DashboardMetrics } from './dashboard/DashboardMetrics';
+import { KpTicketVolumeChart, RevenuePerformanceChart, ServiceSidAllocationChart } from './dashboard/DashboardCharts';
+import { HierarchicalLogs } from './dashboard/HierarchicalLogs';
+import { RepeatingIncidentCauses } from './dashboard/RepeatingIncidentCauses';
+import { DetailedRepeatingTickets } from './dashboard/DetailedRepeatingTickets';
+
 interface DashboardProps {
   data: any;
   periods?: any[];
@@ -50,75 +57,6 @@ interface DashboardProps {
   branchCustomers: string[];
   limitToBranch: boolean;
   setLimitToBranch: (val: boolean) => void;
-}
-
-const COLORS = ['#00AFF0', '#fbbf24', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4'];
-const PIE_COLORS = ['#00AFF0', '#38bdf8', '#fbbf24', '#f59e0b', '#93c5fd', '#818cf8', '#34d399'];
-
-export function getFriendlyLabel(key: string): string {
-  const map: Record<string, string> = {
-    waktulapor: "Waktu Lapor",
-    waktulaporanselesai: "Waktu Laporan Selesai",
-    waktugangguan: "Waktu Gangguan",
-    waktugangguan2: "Waktu Gangguan 2",
-    waktugangguanselesai: "Waktu Gangguan Selesai",
-    durasilaporanmenit: "Durasi Laporan (Menit)",
-    durasigangguanmenit: "Durasi Gangguan (Menit)",
-    durasilaporan: "Durasi Laporan",
-    durasigangguan: "Durasi Gangguan",
-    "Durasi Ticket": "Durasi Ticket",
-    "DURASI (HH:MM:SS)": "Durasi (HH:MM:SS)",
-    "Durasi Incident": "Durasi Incident",
-    durasistopclock: "Durasi Stopclock",
-    durasigangguaminusstopclock: "Durasi Gangguan - Stopclock",
-    durasigangguanminusstopclock: "Durasi Gangguan - Stopclock",
-    durasistopclockpelanggan: "Durasi Stopclock Pelanggan",
-    durasigangguanminusstopclockpelanggan: "Durasi Gangguan - Stopclock Pelanggan",
-    namapelanggan: "Nama Pelanggan",
-    namasbu: "SBU Owner",
-    namakp: "Kantor Perwakilan (KP)",
-    status: "Status",
-    idtiket: "ID Tiket",
-    idpelanggan: "ID Pelanggan",
-    idinsiden: "ID Insiden",
-    sidbaru: "SID Baru",
-    sidlama: "SID Lama",
-    namakelompok: "Kelompok",
-    namakondisi: "Kondisi",
-    laporanberulang: "Laporan Berulang",
-    namapelapor: "Nama Pelapor",
-    isilaporan: "Isi Laporan",
-    tanggapan: "Tanggapan",
-    penerimalaporan: "Penerima Laporan",
-    produk: "Produk",
-    posisitiket: "Posisi Tiket",
-    idolt: "ID OLT",
-    brandolt: "Brand OLT",
-    idsplitter: "ID Splitter",
-    penyebab: "Penyebab",
-    penyebabdetail: "Detail Penyebab",
-    namamitra: "Nama Mitra",
-    petugaslapangan: "Petugas Lapangan",
-    tipetiket: "Tipe Tiket",
-    namasumber: "Nama Sumber",
-    detailSumberLaporan: "Detail Sumber Laporan",
-    segmenicon: "Segmen Icon",
-    tanggalinsiden: "Tanggal Insiden",
-    priority: "Priority",
-    "sbu owner": "SBU Owner (Asli)",
-    periode: "Periode"
-  };
-  
-  if (map[key]) return map[key];
-  if (map[key.toLowerCase()]) return map[key.toLowerCase()];
-  
-  // Clean fallback
-  return key.replace(/([A-Z0-9])/g, ' $1')
-    .replace(/_/g, ' ')
-    .trim()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
 }
 
 export function Dashboard({ 
@@ -274,60 +212,7 @@ export function Dashboard({
       .slice(0, 10);
   }, [statusCounts]);
 
-  // Helper to format minutes into human readable text
-  const formatMinutes = (minutes: number): string => {
-    if (!minutes || isNaN(minutes) || minutes <= 0) return '0m';
-    if (minutes < 60) {
-      return `${Math.round(minutes)}m`;
-    }
-    const hours = Math.floor(minutes / 60);
-    const remMin = Math.round(minutes % 60);
-    if (hours < 24) {
-      return `${hours}h ${remMin}m`;
-    }
-    const days = Math.floor(hours / 24);
-    const remHours = hours % 24;
-    return `${days}d ${remHours}h`;
-  };
 
-  // Helper to format dates (supporting Excel serial numbers and string dates)
-  const formatDateVal = (val: any): string => {
-    if (val === undefined || val === null || val === "") return '-';
-    
-    let dateObj: Date | null = null;
-    if (typeof val === "number") {
-      const msSinceEpoch = (val - 25569) * 86400 * 1000;
-      dateObj = new Date(msSinceEpoch);
-    } else {
-      const s = String(val).trim();
-      const dmyRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
-      const dmyMatch = s.match(dmyRegex);
-      if (dmyMatch) {
-        const day = parseInt(dmyMatch[1], 10);
-        const month = parseInt(dmyMatch[2], 10);
-        const year = parseInt(dmyMatch[3], 10);
-        const hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
-        const minutes = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
-        const seconds = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
-        
-        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-          dateObj = new Date(year, month - 1, day, hours, minutes, seconds);
-        }
-      } else {
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) {
-          dateObj = d;
-        }
-      }
-    }
-    
-    if (dateObj && !isNaN(dateObj.getTime())) {
-      const pad = (n: number) => String(n).padStart(2, '0');
-      return `${pad(dateObj.getDate())}/${pad(dateObj.getMonth() + 1)}/${dateObj.getFullYear()} ${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}:${pad(dateObj.getSeconds())}`;
-    }
-    
-    return String(val);
-  };
 
   // --- REPEATING TICKETS ANALYSIS DATA ---
   const repeatingStats = useMemo(() => {
@@ -839,60 +724,20 @@ export function Dashboard({
           </div>
         </div>
 
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
-            <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">TOTAL TICKETS</p>
-            <h3 className="text-3xl font-black text-slate-900 mt-2">{filteredData.length.toLocaleString('id-ID')}</h3>
-            <span className="text-xs font-semibold text-cyan-600 bg-cyan-50 px-2.5 py-1 rounded-md mt-3 inline-block">Volume</span>
-          </div>
-          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
-            <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">SBU OWNERS</p>
-            <h3 className="text-3xl font-black text-slate-900 mt-2">{(activeStats?.sbu_counts?.length || 0).toLocaleString('id-ID')}</h3>
-            <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md mt-3 inline-block">Regions</span>
-          </div>
-          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
-            <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">KANTOR PERWAKILAN (KP)</p>
-            <h3 className="text-3xl font-black text-slate-900 mt-2">{(activeStats?.kp_counts?.length || 0).toLocaleString('id-ID')}</h3>
-            <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md mt-3 inline-block">Offices</span>
-          </div>
-          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
-            <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">IMPACTED CUSTOMERS</p>
-            <h3 className="text-3xl font-black text-slate-900 mt-2">{(activeStats?.customer_counts?.length || 0).toLocaleString('id-ID')}</h3>
-            <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2.5 py-1 rounded-md mt-3 inline-block">Customers</span>
-          </div>
-        </div>
+        <DashboardMetrics
+          filteredDataLength={filteredData.length}
+          sbuCount={activeStats?.sbu_counts?.length || 0}
+          kpCount={activeStats?.kp_counts?.length || 0}
+          customerCount={activeStats?.customer_counts?.length || 0}
+        />
 
         {/* KPs and Customers Block */}
         <div className="space-y-8">
-          {/* Top KPs */}
-          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl glass-card">
-            <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
-              <Target className="w-5 h-5 text-emerald-500" /> Top Kantor Perwakilan (KP)
-            </h3>
-            <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={activeStats?.kp_counts?.slice(0, 12) || []} margin={{ top: 15, right: 10, left: -20, bottom: 25 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 9, fill: '#475569', angle: -25, textAnchor: 'end' }}
-                    interval={0}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} barSize={30} name="Tickets">
-                    <LabelList dataKey="value" position="top" fill="#475569" style={{ fontSize: '10px', fontWeight: 600 }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* Top KPs Chart */}
+          <KpTicketVolumeChart kpCounts={activeStats?.kp_counts || []} />
  
           {/* Top Customers by volume (Vertical wide list) */}
-          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl glass-card">
+          <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl glass-card bg-white">
             <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
               <Users className="w-5 h-5 text-violet-500" /> Top Impacted Customers
             </h3>
@@ -914,7 +759,7 @@ export function Dashboard({
                         <p className="font-extrabold text-slate-800 text-sm md:text-base truncate" title={item.name}>
                           {item.name}
                         </p>
-                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-2.5">
+                        <div className="w-full bg-slate-250/20 h-1.5 rounded-full overflow-hidden mt-2.5">
                           <div
                             className="bg-violet-500 h-full rounded-full transition-all duration-300"
                             style={{ width: `${percent}%` }}
@@ -923,10 +768,10 @@ export function Dashboard({
                       </div>
                     </div>
                     <div className="flex items-center gap-4 justify-end flex-shrink-0 pl-12 md:pl-0">
-                      <span className="text-xs font-semibold text-slate-400 font-mono">
+                      <span className="text-xs font-semibold text-slate-405 font-mono">
                         {percent.toFixed(1)}% of top 50
                       </span>
-                      <span className="text-xs font-black text-violet-700 bg-violet-50 border border-violet-100 px-3.5 py-2 rounded-full shadow-sm font-mono">
+                      <span className="text-xs font-black text-violet-750 bg-violet-50 border border-violet-100 px-3.5 py-2 rounded-full shadow-sm font-mono">
                         {item.value} Tickets
                       </span>
                     </div>
@@ -938,479 +783,40 @@ export function Dashboard({
         </div>
 
         {/* Repeating Tickets Analysis Section */}
-        <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-8 rounded-2xl glass-card space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                <AlertTriangle className="w-6 h-6 animate-pulse" />
-              </div>
-              <div>
-                <h3 className="text-xl font-extrabold text-slate-900">Repeating Tickets Analysis</h3>
-                <p className="text-sm font-medium text-slate-500 mt-0.5">Insights on ticket frequency, top repeating causes, and duration impacts</p>
-              </div>
-            </div>
-            {selectedSBU !== 'All' && (
-              <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-full self-start sm:self-center">
-                Filtered: {selectedSBU} SBU
-              </span>
-            )}
-          </div>
+        <RepeatingIncidentCauses
+          repeatingStats={repeatingStats}
+          selectedSBU={selectedSBU}
+        />
 
-          {repeatingStats.totalRepeating === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <HelpCircle className="w-12 h-12 text-slate-300 mb-3" />
-              <p className="text-slate-600 font-bold">No Repeating Tickets Found</p>
-              <p className="text-slate-400 text-xs mt-1">No ticket repeats recorded in the selected SBU/filter scope.</p>
-            </div>
-          ) : (
-            <>
-              {/* Repeating Metrics Mini-Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl">
-                  <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">REPEATING VOLUME</p>
-                  <h4 className="text-2xl font-black text-indigo-900 mt-1.5">
-                    {repeatingStats.totalRepeating.toLocaleString('id-ID')}
-                  </h4>
-                  <p className="text-[11px] font-semibold text-slate-400 mt-1">
-                    Tickets repeating &gt;1 time
-                  </p>
-                </div>
-                
-                <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl">
-                  <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">REPEAT RATE</p>
-                  <h4 className="text-2xl font-black text-violet-700 mt-1.5">
-                    {repeatingStats.repeatingRate.toFixed(1)}%
-                  </h4>
-                  <p className="text-[11px] font-semibold text-slate-400 mt-1">
-                    Of total {repeatingStats.totalTickets.toLocaleString('id-ID')} tickets
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl">
-                  <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">AVG REPEATS</p>
-                  <h4 className="text-2xl font-black text-amber-700 mt-1.5">
-                    {repeatingStats.avgRepeats.toFixed(1)}x
-                  </h4>
-                  <p className="text-[11px] font-semibold text-slate-400 mt-1">
-                    Per repeating customer/SID
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl">
-                  <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">MAX REPEATS RECORDED</p>
-                  <h4 className="text-2xl font-black text-rose-700 mt-1.5">
-                    {repeatingStats.maxRepeats}x
-                  </h4>
-                  <p className="text-[11px] font-semibold text-slate-400 mt-1">
-                    Highest ticket frequency
-                  </p>
-                </div>
-              </div>
-
-              {/* Repeating Visualizations Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* Distribution Chart (5 cols) */}
-                <div className="lg:col-span-5 bg-slate-50/50 border border-slate-100 p-5 rounded-2xl">
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-3 mb-4">
-                    REPEATING FREQUENCY DISTRIBUTION
-                  </h4>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={repeatingStats.distribution} margin={{ top: 15, right: 10, left: -20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={32} name="Tickets">
-                          <LabelList dataKey="value" position="top" fill="#475569" style={{ fontSize: '10px', fontWeight: 600 }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Causes and Durations (7 cols) */}
-                <div className="lg:col-span-7 bg-slate-50/50 border border-slate-100 p-5 rounded-2xl flex flex-col justify-between">
-                  <div>
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-3 mb-4 flex justify-between items-center">
-                      <span>TOP REPEATING CAUSES &amp; IMPACT DURATIONS</span>
-                      <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">
-                        Sorted by count
-                      </span>
-                    </h4>
-                    
-                    <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
-                      {repeatingStats.topCauses.slice(0, 5).map((item, idx) => (
-                        <div key={item.cause} className="bg-white border border-slate-100 p-4 rounded-xl shadow-sm hover:border-indigo-100 transition-colors">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-50 text-[10px] font-bold text-indigo-600">
-                                {idx + 1}
-                              </span>
-                              <span className="font-bold text-slate-800 text-xs sm:text-sm">{item.cause}</span>
-                            </div>
-                            <div className="text-xs font-semibold text-slate-500 flex items-center gap-1">
-                              <span className="text-indigo-600 font-bold">{item.count} tickets</span>
-                              <span className="text-slate-300">|</span>
-                              <span>{item.percentageOfRepeating.toFixed(1)}%</span>
-                            </div>
-                          </div>
-
-                          {/* Progress bar */}
-                          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2.5">
-                            <div 
-                              className="bg-indigo-500 h-full rounded-full transition-all duration-500" 
-                              style={{ width: `${item.percentageOfRepeating}%` }} 
-                            />
-                          </div>
-
-                          {/* Duration statistics details */}
-                          <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-[11px] text-slate-500 font-medium">
-                            <div className="flex items-center gap-1 text-emerald-600 font-bold">
-                              <Clock className="w-3.5 h-3.5" />
-                              <span>Avg Outage:</span>
-                              <span className="font-mono text-slate-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                                {formatMinutes(item.avgDurationMinutes)}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 text-indigo-600">
-                              <span>Total Accum:</span>
-                              <span className="font-mono text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
-                                {formatMinutes(item.totalDurationMinutes)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <p className="text-[11px] text-slate-400 font-medium mt-3 italic">
-                    Note: Duration analysis is based on the &apos;durasigangguanmenit&apos; column values for these repeating tickets.
-                  </p>
-                </div>
-              </div>
-
-              {/* Detailed Repeating Tickets Registry */}
-              <div className="bg-slate-50/50 border border-slate-200 p-6 rounded-2xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h4 className="text-xs font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-rose-500 animate-bounce" /> DETAILED REPEATING TICKETS REGISTRY
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Showing {filteredRepSIDGroups.length} unique Service IDs with repeating tickets
-                    </p>
-                  </div>
-                  <div className="relative max-w-xs w-full">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                    <input
-                      type="text"
-                      placeholder="Search repeating tickets..."
-                      value={repSearchQuery}
-                      onChange={(e) => { setRepSearchQuery(e.target.value); setRepPage(1); }}
-                      className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 pl-9 pr-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-xs font-medium placeholder-slate-400 shadow-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {paginatedRepSIDGroups.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 font-semibold bg-white border border-slate-200 rounded-xl">
-                      No matching repeating tickets found.
-                    </div>
-                  ) : (
-                    paginatedRepSIDGroups.map((group) => {
-                      const isExpanded = !!expandedRepSIDs[group.sid];
-                      return (
-                        <div key={group.sid} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden transition-all duration-200">
-                          {/* SID Header Row */}
-                          <div 
-                            onClick={() => setExpandedRepSIDs(prev => ({ ...prev, [group.sid]: !isExpanded }))}
-                            className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                              <span className="bg-indigo-50 text-indigo-750 font-mono font-bold text-xs px-2.5 py-1 rounded-lg border border-indigo-100">
-                                {group.sid}
-                              </span>
-                              <div className="space-y-0.5">
-                                <span className="font-extrabold text-slate-800 text-sm block sm:inline">{group.customerName}</span>
-                                <span className="text-[10px] text-slate-400 font-semibold sm:ml-2 block sm:inline">({group.sbuOwner})</span>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-3 sm:gap-6">
-                              <div className="text-left md:text-right">
-                                <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Dominant Cause</span>
-                                <span className="text-xs text-slate-700 font-bold block">{group.dominantCause}</span>
-                              </div>
-
-                              <div className="text-left md:text-right">
-                                <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Total Duration</span>
-                                <span className="text-xs font-mono text-slate-700 font-bold block">
-                                  {group.totalDuration.toLocaleString('id-ID')} mins ({formatMinutes(group.totalDuration)})
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-3">
-                                <span className="bg-rose-50 border border-rose-100 text-rose-700 px-3 py-1 rounded-full font-black text-xs">
-                                  {group.repeats}x Repeats
-                                </span>
-                                <div className="text-slate-400 p-1">
-                                  <ChevronDown className={`w-4 h-4 transform transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-650' : ''}`} />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Expanded Tickets Table */}
-                          {isExpanded && (
-                            <div className="border-t border-slate-100 bg-slate-50/30 p-4 animate-in fade-in duration-200">
-                              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                                <table className="w-full text-left text-xs">
-                                  <thead className="bg-slate-50 text-slate-505 font-bold uppercase border-b border-slate-200">
-                                    <tr>
-                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Ticket ID</th>
-                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Open Date</th>
-                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Duration</th>
-                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Ticket Cause</th>
-                                      <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">SBU Owner</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                                    {group.tickets.map((ticket: any) => (
-                                      <tr key={ticket.idtiket} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-4 py-2.5 font-mono font-bold text-indigo-600">{ticket.idtiket}</td>
-                                        <td className="px-4 py-2.5 text-slate-500">
-                                          {ticket.waktugangguan2 || ticket.waktulapor || ticket.tanggalinsiden || '-'}
-                                        </td>
-                                        <td className="px-4 py-2.5 font-mono text-slate-600">
-                                          {parseFloat(ticket.durasigangguanmenit || 0).toLocaleString('id-ID')} m ({formatMinutes(parseFloat(ticket.durasigangguanmenit || 0))})
-                                        </td>
-                                        <td className="px-4 py-2.5 text-slate-800 font-bold">{ticket.penyebab || '-'}</td>
-                                        <td className="px-4 py-2.5 text-slate-500 font-semibold">{ticket.namasbu || '-'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                {/* Pagination Controls */}
-                {totalRepPages > 1 && (
-                  <div className="flex items-center justify-between pt-3">
-                    <span className="text-xs text-slate-400 font-semibold">
-                      Page {repPage} of {totalRepPages}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setRepPage(prev => Math.max(prev - 1, 1))}
-                        disabled={repPage === 1}
-                        className="px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-colors cursor-pointer"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() => setRepPage(prev => Math.min(prev + 1, totalRepPages))}
-                        disabled={repPage === totalRepPages}
-                        className="px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-colors cursor-pointer"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+        {/* Detailed Repeating Tickets Registry */}
+        {repeatingStats.totalRepeating > 0 && (
+          <DetailedRepeatingTickets
+            filteredRepSIDGroups={filteredRepSIDGroups}
+            paginatedRepSIDGroups={paginatedRepSIDGroups}
+            expandedRepSIDs={expandedRepSIDs}
+            setExpandedRepSIDs={setExpandedRepSIDs}
+            repSearchQuery={repSearchQuery}
+            setRepSearchQuery={setRepSearchQuery}
+            repPage={repPage}
+            setRepPage={setRepPage}
+            totalRepPages={totalRepPages}
+          />
+        )}
 
         {/* Hierarchical Customer Ticket Explorer */}
-        <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 rounded-2xl space-y-6 p-6 glass-card">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-            <div>
-              <h3 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
-                <Database className="w-5.5 h-5.5 text-cyan-600" /> Hierarchical Ticketing Logs
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Grouped by ID Pelanggan &rarr; Service ID (SID) &rarr; Individual Tickets
-              </p>
-            </div>
-            <div className="relative max-w-sm w-full">
-              <Search className="w-4.5 h-4.5 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                placeholder="Search by Customer ID, Name, SID, or Ticket ID..."
-                value={custSearchQuery}
-                onChange={(e) => setCustSearchQuery(e.target.value)}
-                className="w-full bg-white border border-slate-300 text-slate-700 py-2 pl-10 pr-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-xs font-semibold placeholder-slate-400 shadow-sm"
-              />
-            </div>
-          </div>
-
-          {/* Grouped customers list */}
-          <div className="space-y-4">
-            {paginatedCustomers.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 font-semibold text-sm">
-                No matching customers or SIDs found.
-              </div>
-            ) : (
-              paginatedCustomers.map((cust: any) => {
-                const isCustExpanded = !!expandedCustomers[cust.id];
-                return (
-                  <div key={cust.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm hover:border-slate-300 transition-colors">
-                    {/* Customer Row */}
-                    <div
-                      onClick={() => setExpandedCustomers(prev => ({ ...prev, [cust.id]: !prev[cust.id] }))}
-                      className="px-6 py-4 bg-slate-50 hover:bg-slate-100/60 flex items-center justify-between cursor-pointer select-none transition-colors"
-                    >
-                      <div className="flex items-center gap-4 min-w-0 flex-1">
-                        <div className={`p-1.5 rounded-lg transition-colors ${isCustExpanded ? 'bg-cyan-50 text-cyan-600' : 'bg-slate-100 text-slate-500'}`}>
-                          {isCustExpanded ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-extrabold text-slate-800 text-sm md:text-base truncate flex items-center gap-2">
-                            <span>{cust.name}</span>
-                            <span className="text-xs font-mono font-medium text-slate-400 bg-slate-200/60 px-2 py-0.5 rounded">
-                              ID: {cust.id}
-                            </span>
-                          </p>
-                           <p className="text-xs font-semibold text-slate-400 mt-1 flex flex-wrap items-center gap-2">
-                            <span>{cust.sids.length} Service {cust.sids.length > 1 ? 'IDs' : 'ID'} (SIDs) registered</span>
-                            <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-300" />
-                            <span className="text-[11px] text-cyan-700 bg-cyan-50/60 border border-cyan-100/50 px-2 py-0.5 rounded-md font-bold">
-                              Avg Resolve: {formatMinutes(cust.avgResolveTime)}
-                            </span>
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-                        <span className="text-xs font-black text-cyan-700 bg-cyan-50 border border-cyan-100 px-3.5 py-1.5 rounded-full shadow-sm">
-                          {cust.ticketCount} {cust.ticketCount > 1 ? 'Tickets' : 'Ticket'}
-                        </span>
-                        <ChevronRight className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isCustExpanded ? 'rotate-90' : ''}`} />
-                      </div>
-                    </div>
-
-                    {/* SIDs list under Customer */}
-                    {isCustExpanded && (
-                      <div className="bg-white border-t border-slate-150 divide-y divide-slate-100 p-2 md:p-4 space-y-3">
-                        {cust.sids.map((sidObj: any) => {
-                          const sidKey = `${cust.id}-${sidObj.sid}`;
-                          const isSidExpanded = !!expandedSIDs[sidKey];
-                          return (
-                            <div key={sidObj.sid} className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/30">
-                              {/* SID Header Row */}
-                              <div
-                                onClick={() => setExpandedSIDs(prev => ({ ...prev, [sidKey]: !prev[sidKey] }))}
-                                className="px-5 py-3.5 hover:bg-slate-100/50 flex items-center justify-between cursor-pointer select-none transition-colors"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="text-slate-400">
-                                    {isSidExpanded ? <Minus className="w-3.5 h-3.5 text-cyan-500" /> : <Plus className="w-3.5 h-3.5" />}
-                                  </div>
-                                  <div>
-                                    <span className="text-[11px] font-black tracking-wider uppercase text-slate-400 mr-2">SERVICE ID</span>
-                                    <span className="font-mono font-extrabold text-slate-700 text-sm">
-                                      {sidObj.sid}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="text-[10px] font-extrabold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
-                                    {sidObj.ticketCount} {sidObj.ticketCount > 1 ? 'Tickets' : 'Ticket'}
-                                  </span>
-                                  <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isSidExpanded ? 'rotate-90' : ''}`} />
-                                </div>
-                              </div>
-
-                              {/* Tickets details under SID */}
-                              {isSidExpanded && (
-                                <div className="bg-white border-t border-slate-100 overflow-x-auto p-1.5 md:p-3">
-                                  <table className="w-full text-xs text-left">
-                                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                                      <tr>
-                                        <th className="px-4 py-2 text-[10px]">TICKET ID</th>
-                                        <th className="px-4 py-2 text-[10px]">SBU OWNER</th>
-                                        <th className="px-4 py-2 text-[10px]">KP</th>
-                                        <th className="px-4 py-2 text-[10px]">OPEN TICKET DATE</th>
-                                        <th className="px-4 py-2 text-[10px]">TICKET DURATION</th>
-                                        <th className="px-4 py-2 text-[10px]">REPEATING</th>
-                                        <th className="px-4 py-2 text-[10px]">CAUSE</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 font-medium">
-                                      {sidObj.tickets.map((t: any, idx: number) => (
-                                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                                          <td className="px-4 py-2.5 font-mono font-extrabold text-cyan-600">{t.idtiket || '-'}</td>
-                                          <td className="px-4 py-2.5 text-slate-600 font-semibold">{t.namasbu || '-'}</td>
-                                          <td className="px-4 py-2.5 text-slate-500">{t.namakp || '-'}</td>
-                                          <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">
-                                            {formatDateVal(t.waktulapor || t.tanggalinsiden || t.waktugangguan2)}
-                                          </td>
-                                          <td className="px-4 py-2.5 font-mono text-slate-700">
-                                            {t.durasigangguan || (t.durasigangguanmenit ? `${t.durasigangguanmenit} m` : '-')}
-                                          </td>
-                                          <td className="px-4 py-2.5 font-mono">
-                                            {sidFrequency[String(t.sidbaru || t.sidlama || '').trim()] > 1 ? (
-                                              <span className="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full font-bold">
-                                                {sidFrequency[String(t.sidbaru || t.sidlama || '').trim()]}x Repeats
-                                              </span>
-                                            ) : (
-                                              <span className="text-slate-400">1x (First)</span>
-                                            )}
-                                          </td>
-                                          <td className="px-4 py-2.5 text-slate-700 font-bold truncate max-w-[150px]" title={t.penyebab}>
-                                            {t.penyebab || '-'}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Grouped Pagination Footer */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-              <span className="text-xs text-slate-400 font-semibold">
-                Page {custPage} of {totalPages} ({filteredGroupedCustomers.length} customers)
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setCustPage(prev => Math.max(prev - 1, 1))}
-                  disabled={custPage === 1}
-                  className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors cursor-pointer shadow-sm active:scale-95"
-                >
-                  Prev
-                </button>
-                <button
-                  onClick={() => setCustPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={custPage === totalPages}
-                  className="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors cursor-pointer shadow-sm active:scale-95"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <HierarchicalLogs
+          custSearchQuery={custSearchQuery}
+          setCustSearchQuery={setCustSearchQuery}
+          paginatedCustomers={paginatedCustomers}
+          expandedCustomers={expandedCustomers}
+          setExpandedCustomers={setExpandedCustomers}
+          expandedSIDs={expandedSIDs}
+          setExpandedSIDs={setExpandedSIDs}
+          sidFrequency={sidFrequency}
+          custPage={custPage}
+          setCustPage={setCustPage}
+          totalPages={totalPages}
+        />
       </div>
     );
   }
@@ -1535,70 +941,11 @@ export function Dashboard({
       {hasSummary && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Revenue by Service Bar Chart */}
-          <div className="lg:col-span-2 bg-white border border-slate-200 p-6 rounded-2xl">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-slate-900">Revenue Performance by Service</h3>
-              <p className="text-xs font-semibold text-slate-400 mt-0.5">Total aggregated customer revenue per service type</p>
-            </div>
-            <div className="h-[350px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={summaryData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="namaLayanan" tick={{ fontSize: 10, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: '#64748b' }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => (v / 1e6).toLocaleString() + 'M'}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="TotalRevenue" fill="#00AFF0" name="Revenue" radius={[4, 4, 0, 0]} barSize={40}>
-                    {summaryData.map((_: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* Revenue by Service Bar Chart */}
+          <RevenuePerformanceChart summaryData={summaryData} />
 
           {/* SIDs per Service Pie Chart */}
-          <div className="bg-white border border-slate-200 p-6 rounded-2xl">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-slate-900">Service SID Allocation</h3>
-              <p className="text-xs font-semibold text-slate-400 mt-0.5">Total unique SIDs provisioned per service</p>
-            </div>
-            <div className="h-[260px] flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={summaryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
-                    paddingAngle={3}
-                    dataKey="Total_SID"
-                    nameKey="namaLayanan"
-                  >
-                    {summaryData.map((_: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mt-2 text-xs font-semibold text-slate-600">
-              {summaryData.slice(0, 4).map((item: any, idx: number) => (
-                <div key={idx} className="flex items-center gap-1.5 truncate">
-                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                  <span className="truncate">{item.namaLayanan}: </span>
-                  <span className="font-extrabold text-slate-900">{item.Total_SID}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ServiceSidAllocationChart summaryData={summaryData} />
         </div>
       )}
 
