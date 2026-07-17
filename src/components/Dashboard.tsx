@@ -37,7 +37,8 @@ import {
   Plus,
   Minus,
   Upload,
-  Trash2
+  Trash2,
+  Filter
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -148,6 +149,7 @@ export function Dashboard({
 
   // --- TICKETING DASHBOARD ---
   const [selectedSBU, setSelectedSBU] = useState('All');
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
 
   // Hierarchy expand states
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
@@ -766,22 +768,58 @@ export function Dashboard({
               </div>
             </div>
 
-            {/* Jawa Tengah Branch Customers Filter */}
-            {branchCustomers.length > 0 ? (
-              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl px-4 py-2.5 shadow-sm hover:bg-slate-50 cursor-pointer transition-colors select-none">
-                <input
-                  type="checkbox"
-                  checked={limitToBranch}
-                  onChange={(e) => setLimitToBranch(e.target.checked)}
-                  className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
-                />
-                <span className="text-slate-700 text-sm font-semibold">JT Branch Filter ({branchCustomers.length})</span>
-              </label>
-            ) : (
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 select-none" title="Configure list in Dataset Manager">
-                <span>JT Filter Inactive</span>
-              </div>
-            )}
+            {/* Filter Dropdown Menu */}
+            <div className="relative">
+              <button
+                onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+                className={`flex items-center gap-2 px-4 py-2.5 bg-white border rounded-xl text-sm font-semibold transition-all shadow-sm active:scale-95 cursor-pointer select-none ${
+                  limitToBranch 
+                    ? 'border-cyan-500 text-cyan-600 bg-cyan-50/10 ring-1 ring-cyan-200' 
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <Filter className={`w-4 h-4 ${limitToBranch ? 'text-cyan-600' : 'text-slate-500'}`} />
+                <span>Filters</span>
+                {limitToBranch && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 ml-1 transition-transform duration-205 ${isFilterDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isFilterDropdownOpen && (
+                <>
+                  {/* Backdrop overlay to close when clicking outside */}
+                  <div 
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsFilterDropdownOpen(false)}
+                  />
+                  {/* Dropdown Menu Container */}
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Branch Filters</h5>
+                    
+                    {branchCustomers.length > 0 ? (
+                      <label className="flex items-start gap-3 p-2.5 hover:bg-slate-50 rounded-xl cursor-pointer transition-colors select-none">
+                        <input
+                          type="checkbox"
+                          checked={limitToBranch}
+                          onChange={(e) => setLimitToBranch(e.target.checked)}
+                          className="mt-0.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-slate-800 text-xs font-bold block">Jawa Tengah Branch</span>
+                          <span className="text-[10px] text-slate-450 font-semibold block">{branchCustomers.length} registered SIDs/Customers</span>
+                        </div>
+                      </label>
+                    ) : (
+                      <div className="p-3 text-center bg-slate-50 border border-slate-150 border-dashed rounded-xl">
+                        <span className="text-[11px] text-slate-450 font-bold block">No Branch List</span>
+                        <span className="text-[9px] text-slate-400 font-medium block mt-0.5">Upload a customer list in the Dataset Manager first.</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Export Action */}
             <button
