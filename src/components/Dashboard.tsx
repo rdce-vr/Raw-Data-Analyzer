@@ -367,17 +367,19 @@ export function Dashboard({
           totalRepeating++;
           totalRepeatsSum += repeats;
 
-          // Cause grouping for repeating tickets
+          // Cause grouping for repeating tickets (filter out '-')
           const cause = row.penyebab ? String(row.penyebab).trim() : "UNKNOWN";
-          penyebabCounts[cause] = (penyebabCounts[cause] || 0) + 1;
+          if (cause !== "-") {
+            penyebabCounts[cause] = (penyebabCounts[cause] || 0) + 1;
 
-          // Duration tracking
-          const durVal = parseFloat(row.durasigangguanmenit);
-          const dur = isNaN(durVal) ? 0 : durVal;
-          if (!penyebabDurations[cause]) {
-            penyebabDurations[cause] = [];
+            // Duration tracking
+            const durVal = parseFloat(row.durasigangguanmenit);
+            const dur = isNaN(durVal) ? 0 : durVal;
+            if (!penyebabDurations[cause]) {
+              penyebabDurations[cause] = [];
+            }
+            penyebabDurations[cause].push(dur);
           }
-          penyebabDurations[cause].push(dur);
         }
       }
     });
