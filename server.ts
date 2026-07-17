@@ -596,39 +596,56 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
         }
       });
 
-      // Group rows by period key
-      const partitionedPeriods: Record<string, any[]> = {};
+      // Determine dominant period and apply grouping mode
       const reqCustomPeriod = req.body.customPeriod;
       const forceCustom = reqCustomPeriod && /^\d{4}-\d{2}$/.test(reqCustomPeriod);
+      const groupingMode = req.body.groupingMode || "dominant"; // "dominant" or "partition"
 
-      processedRows.forEach((row: any) => {
-        let periodKey = "";
-        if (forceCustom) {
-          periodKey = reqCustomPeriod;
-        } else {
+      let dominantPeriodId = "";
+      if (forceCustom) {
+        dominantPeriodId = reqCustomPeriod;
+      } else {
+        const counts: Record<string, number> = {};
+        processedRows.forEach((row: any) => {
           const d = parseExcelDate(row.waktulapor) || parseExcelDate(row.tanggalinsiden);
+          let periodKey = "";
           if (d) {
             periodKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
           } else {
             const now = new Date();
             periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
           }
-        }
-        if (!partitionedPeriods[periodKey]) {
-          partitionedPeriods[periodKey] = [];
-        }
-        partitionedPeriods[periodKey].push(row);
-      });
+          counts[periodKey] = (counts[periodKey] || 0) + 1;
+        });
 
-      // Find dominant period ID (for returning in the response)
-      let dominantPeriodId = "";
-      let maxCount = 0;
-      Object.entries(partitionedPeriods).forEach(([pId, rows]) => {
-        if (rows.length > maxCount) {
-          maxCount = rows.length;
-          dominantPeriodId = pId;
-        }
-      });
+        let maxCount = 0;
+        Object.entries(counts).forEach(([pId, count]) => {
+          if (count > maxCount) {
+            maxCount = count;
+            dominantPeriodId = pId;
+          }
+        });
+      }
+
+      const partitionedPeriods: Record<string, any[]> = {};
+      if (groupingMode === "dominant") {
+        partitionedPeriods[dominantPeriodId] = processedRows;
+      } else {
+        processedRows.forEach((row: any) => {
+          const d = parseExcelDate(row.waktulapor) || parseExcelDate(row.tanggalinsiden);
+          let periodKey = "";
+          if (d) {
+            periodKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          } else {
+            const now = new Date();
+            periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          }
+          if (!partitionedPeriods[periodKey]) {
+            partitionedPeriods[periodKey] = [];
+          }
+          partitionedPeriods[periodKey].push(row);
+        });
+      }
 
       const periodStats: Record<string, any> = {};
 

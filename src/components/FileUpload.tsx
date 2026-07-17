@@ -7,6 +7,7 @@ interface FileUploadProps {
 
 export function FileUpload({ onUploadSuccess }: FileUploadProps) {
   const [uploadType, setUploadType] = useState<'ticketing'>('ticketing');
+  const [groupingMode, setGroupingMode] = useState<'dominant' | 'partition'>('dominant');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export function FileUpload({ onUploadSuccess }: FileUploadProps) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('type', uploadType);
+    formData.append('groupingMode', groupingMode);
 
     try {
       // Use relative endpoint /api/upload since frontend and backend share the same server port
@@ -80,6 +82,38 @@ export function FileUpload({ onUploadSuccess }: FileUploadProps) {
 
   return (
     <div className="w-full max-w-3xl mx-auto mb-12">
+      {/* Import Mode Selector */}
+      <div className="mb-6 bg-white/60 p-1.5 rounded-2xl border border-slate-200/80 flex gap-2 max-w-md mx-auto shadow-sm backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => setGroupingMode('dominant')}
+          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all duration-200 cursor-pointer ${
+            groupingMode === 'dominant'
+              ? 'bg-cyan-600 text-white shadow-md shadow-cyan-500/10'
+              : 'text-slate-600 hover:bg-slate-100/80'
+          }`}
+        >
+          Single Month (Recommended)
+        </button>
+        <button
+          type="button"
+          onClick={() => setGroupingMode('partition')}
+          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all duration-200 cursor-pointer ${
+            groupingMode === 'partition'
+              ? 'bg-cyan-600 text-white shadow-md shadow-cyan-500/10'
+              : 'text-slate-600 hover:bg-slate-100/80'
+          }`}
+        >
+          Multi-Month Partition
+        </button>
+      </div>
+
+      <p className="text-[11px] text-slate-500 font-bold text-center mb-6 -mt-3 animate-in fade-in duration-300">
+        {groupingMode === 'dominant'
+          ? '⭐ Keeps all carry-over tickets grouped inside the dominant month (e.g. May 2026).'
+          : '📅 Splits tickets into their respective calendar months based on individual ticket open dates.'}
+      </p>
+
       <div
         className={`relative rounded-2xl p-16 text-center transition-all duration-300 ease-out transform border-2 border-dashed ${
           isDragging
