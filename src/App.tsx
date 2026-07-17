@@ -14,7 +14,7 @@ export default function App() {
   const [isLoadingYearly, setIsLoadingYearly] = useState<boolean>(false);
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
   const [branchCustomers, setBranchCustomers] = useState<string[]>([]);
-  const [limitToBranch, setLimitToBranch] = useState<boolean>(false);
+  const [limitToBranch, setLimitToBranch] = useState<boolean>(true);
   const [isUploadingBranch, setIsUploadingBranch] = useState<boolean>(false);
 
   // Fetch branch customer list on component mount

@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Search, ChevronDown } from 'lucide-react';
-import { formatMinutes } from './DashboardUtils';
+import { formatMinutes, formatDateVal } from './DashboardUtils';
 
 interface DetailedRepeatingTicketsProps {
   filteredRepSIDGroups: any[];
@@ -115,8 +115,8 @@ export function DetailedRepeatingTickets({
                           {group.tickets.map((ticket: any) => (
                             <tr key={ticket.idtiket} className="hover:bg-slate-50/50 transition-colors">
                               <td className="px-4 py-2.5 font-mono font-bold text-indigo-600">{ticket.idtiket}</td>
-                              <td className="px-4 py-2.5 text-slate-500">
-                                {ticket.waktugangguan2 || ticket.waktulapor || ticket.tanggalinsiden || '-'}
+                              <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">
+                                {formatDateVal(ticket.waktulapor || ticket.tanggalinsiden || ticket.waktugangguan2)}
                               </td>
                               <td className="px-4 py-2.5 font-mono text-slate-600">
                                 {parseFloat(ticket.durasigangguanmenit || 0).toLocaleString('id-ID')} m ({formatMinutes(parseFloat(ticket.durasigangguanmenit || 0))})

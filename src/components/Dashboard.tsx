@@ -126,6 +126,10 @@ export function Dashboard({
     return [];
   }, [originalData, stats, fileType]);
 
+  const branchCustomersSet = useMemo(() => {
+    return new Set(branchCustomers.map(v => String(v).toLowerCase().trim()));
+  }, [branchCustomers]);
+
   const filteredData = useMemo(() => {
     if (fileType !== 'ticketing') return [];
     let data = originalData || [];
@@ -136,20 +140,19 @@ export function Dashboard({
     }
 
     // 2. Branch Customer List Filter
-    if (limitToBranch && branchCustomers.length > 0) {
-      const customerSet = new Set(branchCustomers.map(v => String(v).toLowerCase().trim()));
+    if (limitToBranch && branchCustomersSet.size > 0) {
       data = data.filter((row: any) => {
         const idPel = String(row.idpelanggan || "").toLowerCase().trim();
         const namePel = String(row.namapelanggan || "").toLowerCase().trim();
         const sidBaru = String(row.sidbaru || "").toLowerCase().trim();
         const sidLama = String(row.sidlama || "").toLowerCase().trim();
         
-        return customerSet.has(idPel) || customerSet.has(namePel) || customerSet.has(sidBaru) || customerSet.has(sidLama);
+        return branchCustomersSet.has(idPel) || branchCustomersSet.has(namePel) || branchCustomersSet.has(sidBaru) || branchCustomersSet.has(sidLama);
       });
     }
 
     return data;
-  }, [originalData, selectedSBU, fileType, limitToBranch, branchCustomers]);
+  }, [originalData, selectedSBU, fileType, limitToBranch, branchCustomersSet]);
 
   const sidFrequency = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -174,19 +177,24 @@ export function Dashboard({
       };
     }
 
-    // Recalculate status counts
     const status_counts: Record<string, number> = {};
+    const sbuCounts: Record<string, number> = {};
+    const kpCounts: Record<string, number> = {};
+    const customerCounts: Record<string, number> = {};
+
     filteredData.forEach((row: any) => {
-      const val = row.status;
-      if (val) status_counts[val] = (status_counts[val] || 0) + 1;
+      const sbu = row.namasbu;
+      const kp = row.namakp;
+      const cust = row.namapelanggan;
+      const st = row.status;
+
+      if (sbu) sbuCounts[sbu] = (sbuCounts[sbu] || 0) + 1;
+      if (kp) kpCounts[kp] = (kpCounts[kp] || 0) + 1;
+      if (cust) customerCounts[cust] = (customerCounts[cust] || 0) + 1;
+      if (st) status_counts[st] = (status_counts[st] || 0) + 1;
     });
 
-    const getTopCounts = (key: string) => {
-      const counts: Record<string, number> = {};
-      filteredData.forEach((row: any) => {
-        const val = row[key];
-        if (val) counts[val] = (counts[val] || 0) + 1;
-      });
+    const sortAndSlice = (counts: Record<string, number>) => {
       return Object.entries(counts)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
@@ -195,9 +203,9 @@ export function Dashboard({
 
     return {
       status_counts,
-      sbu_counts: getTopCounts('namasbu'),
-      kp_counts: getTopCounts('namakp'),
-      customer_counts: getTopCounts('namapelanggan'),
+      sbu_counts: sortAndSlice(sbuCounts),
+      kp_counts: sortAndSlice(kpCounts),
+      customer_counts: sortAndSlice(customerCounts),
       time_summary: stats?.time_summary || {}
     };
   }, [filteredData, stats, fileType]);

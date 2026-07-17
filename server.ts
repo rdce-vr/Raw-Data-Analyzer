@@ -79,12 +79,12 @@ app.get("/api/period-data", async (req, res) => {
         [periodId]
       );
 
-      let aggregatedRows: any[] = [];
-      chunksRes.rows.forEach((c: any) => {
+      const aggregatedRows: any[] = [];
+      for (const c of chunksRes.rows) {
         if (Array.isArray(c.rows)) {
-          aggregatedRows = aggregatedRows.concat(c.rows);
+          aggregatedRows.push(...c.rows);
         }
-      });
+      }
 
       return res.json({
         fileType: periodData.fileType || "ticketing",
@@ -139,12 +139,12 @@ app.get("/api/yearly-data", async (req, res) => {
         [yearNum]
       );
 
-      let allRows: any[] = [];
-      result.rows.forEach((row: any) => {
+      const allRows: any[] = [];
+      for (const row of result.rows) {
         if (Array.isArray(row.rows)) {
-          allRows = allRows.concat(row.rows);
+          allRows.push(...row.rows);
         }
-      });
+      }
 
       return res.json({
         fileType: "ticketing",
@@ -158,14 +158,14 @@ app.get("/api/yearly-data", async (req, res) => {
     } catch (dbErr) {
       console.log("Database lookup failed, falling back to local JSON cache for yearly data:", dbErr);
       const cache = loadCache();
-      let allRows: any[] = [];
+      const allRows: any[] = [];
       if (cache && cache.periods) {
-        Object.entries(cache.periods).forEach(([periodId, content]: [string, any]) => {
+        for (const [periodId, content] of Object.entries(cache.periods)) {
           const [yrStr] = periodId.split("-");
           if (parseInt(yrStr) === yearNum) {
-            allRows = allRows.concat(loadCachePeriodData(periodId));
+            allRows.push(...loadCachePeriodData(periodId));
           }
-        });
+        }
       }
       return res.json({
         fileType: "ticketing",
