@@ -58,6 +58,14 @@ async function initializeDbSchema() {
         )
       `);
       
+      // Create branch_customers table
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS branch_customers (
+          value VARCHAR(255) PRIMARY KEY,
+          uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
       console.log("Database schema initialized successfully.");
     } finally {
       client.release();
@@ -245,6 +253,30 @@ async function seedDbIfEmpty() {
         throw txErr;
       } finally {
         client.release();
+      }
+    }
+
+    // Seed branch customers if empty
+    if (cache.branchCustomers && Array.isArray(cache.branchCustomers)) {
+      const bcCheck = await p.query("SELECT COUNT(*) FROM branch_customers");
+      const bcCount = parseInt(bcCheck.rows[0].count);
+      if (bcCount === 0) {
+        console.log(`Seeding ${cache.branchCustomers.length} branch customers from cache...`);
+        const client = await p.connect();
+        try {
+          await client.query("BEGIN");
+          const batchSize = 100;
+          for (let i = 0; i < cache.branchCustomers.length; i += batchSize) {
+            const batch = cache.branchCustomers.slice(i, i + batchSize);
+            await client.query(
+              `INSERT INTO branch_customers (value) VALUES ${batch.map((_, idx) => `($${idx + 1})`).join(", ")} ON CONFLICT (value) DO NOTHING`,
+              batch
+            );
+          }
+          await client.query("COMMIT");
+        } finally {
+          client.release();
+        }
       }
     }
   } catch (err) {
@@ -1061,6 +1093,120 @@ app.get("/api/export", (req, res) => {
   } catch (err: any) {
     console.error("Export error:", err);
     res.status(500).json({ detail: `Export failed: ${err.message}` });
+  }
+});
+
+// Upload a list of customers belonging to the branch
+app.post("/api/branch-customers", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ detail: "No file uploaded" });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const rawRows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    if (rawRows.length === 0) {
+      return res.status(400).json({ detail: "Uploaded spreadsheet is empty" });
+    }
+
+    // Extract all unique values from all cells in the sheet (trimming strings, skipping nulls/empties)
+    const valuesSet = new Set<string>();
+    rawRows.forEach((row: any) => {
+      Object.values(row).forEach((val: any) => {
+        if (val !== undefined && val !== null && val !== "") {
+          const s = String(val).trim();
+          if (s) valuesSet.add(s);
+        }
+      });
+    });
+
+    const values = Array.from(valuesSet);
+    if (values.length === 0) {
+      return res.status(400).json({ detail: "No valid customer values found in file" });
+    }
+
+    // Save to cache
+    let cache = loadCache();
+    if (!cache) {
+      cache = { type: "multi-period-ticketing", periods: {} };
+    }
+    cache.branchCustomers = values;
+    saveCache(cache);
+
+    // Save to database
+    try {
+      const p = getDbPool();
+      const client = await p.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("DELETE FROM branch_customers");
+        
+        // Insert in batches
+        const batchSize = 100;
+        for (let i = 0; i < values.length; i += batchSize) {
+          const batch = values.slice(i, i + batchSize);
+          await client.query(
+            `INSERT INTO branch_customers (value) VALUES ${batch.map((_, idx) => `($${idx + 1})`).join(", ")} ON CONFLICT (value) DO NOTHING`,
+            batch
+          );
+        }
+        await client.query("COMMIT");
+      } finally {
+        client.release();
+      }
+    } catch (dbErr) {
+      console.error("Database save failed for branch customers:", dbErr);
+    }
+
+    return res.json({ success: true, count: values.length, values });
+  } catch (err: any) {
+    console.error("Error uploading branch customers:", err);
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// Fetch all registered branch customer list values
+app.get("/api/branch-customers", async (req, res) => {
+  try {
+    // First try from database
+    try {
+      const p = getDbPool();
+      const result = await p.query("SELECT value FROM branch_customers");
+      const list = result.rows.map((r: any) => r.value);
+      return res.json({ values: list });
+    } catch (dbErr) {
+      // Fallback to cache
+      const cache = loadCache();
+      return res.json({ values: cache?.branchCustomers || [] });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// Clear registered branch customer list
+app.delete("/api/branch-customers", async (req, res) => {
+  try {
+    // Delete from cache
+    const cache = loadCache();
+    if (cache) {
+      delete cache.branchCustomers;
+      saveCache(cache);
+    }
+
+    // Delete from database
+    try {
+      const p = getDbPool();
+      await p.query("DELETE FROM branch_customers");
+    } catch (dbErr) {
+      console.error("Database delete failed for branch customers:", dbErr);
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ detail: err.message });
   }
 });
 

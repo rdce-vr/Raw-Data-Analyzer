@@ -35,7 +35,9 @@ import {
   ChevronRight,
   Eye,
   Plus,
-  Minus
+  Minus,
+  Upload,
+  Trash2
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -132,6 +134,65 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
 
   // --- TICKETING DASHBOARD ---
   const [selectedSBU, setSelectedSBU] = useState('All');
+  const [branchCustomers, setBranchCustomers] = useState<string[]>([]);
+  const [limitToBranch, setLimitToBranch] = useState(false);
+
+  // Fetch branch customer list on component mount
+  useEffect(() => {
+    fetch('/api/branch-customers')
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Failed to load branch customer list');
+      })
+      .then(data => {
+        if (Array.isArray(data.values)) {
+          setBranchCustomers(data.values);
+        }
+      })
+      .catch(err => console.error('Error fetching branch customers:', err));
+  }, []);
+
+  const handleUploadBranchCustomers = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/branch-customers', {
+        method: 'POST',
+        body: formData
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Upload failed');
+      }
+      const result = await response.json();
+      setBranchCustomers(result.values || []);
+      setLimitToBranch(true);
+    } catch (err: any) {
+      alert('Failed to upload branch customer list: ' + err.message);
+    }
+  };
+
+  const handleDeleteBranchCustomers = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!confirm('Are you sure you want to clear the registered Jawa Tengah branch customer list?')) return;
+    
+    try {
+      const response = await fetch('/api/branch-customers', {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        setBranchCustomers([]);
+        setLimitToBranch(false);
+      }
+    } catch (err: any) {
+      console.error('Error clearing branch customer list:', err);
+    }
+  };
 
   // Hierarchy expand states
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
@@ -171,9 +232,28 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
 
   const filteredData = useMemo(() => {
     if (fileType !== 'ticketing') return [];
-    if (selectedSBU === 'All' || !originalData) return originalData || [];
-    return originalData.filter((row: any) => row.namasbu === selectedSBU);
-  }, [originalData, selectedSBU, fileType]);
+    let data = originalData || [];
+
+    // 1. SBU Owner Filter
+    if (selectedSBU !== 'All') {
+      data = data.filter((row: any) => row.namasbu === selectedSBU);
+    }
+
+    // 2. Branch Customer List Filter
+    if (limitToBranch && branchCustomers.length > 0) {
+      const customerSet = new Set(branchCustomers.map(v => String(v).toLowerCase().trim()));
+      data = data.filter((row: any) => {
+        const idPel = String(row.idpelanggan || "").toLowerCase().trim();
+        const namePel = String(row.namapelanggan || "").toLowerCase().trim();
+        const sidBaru = String(row.sidbaru || "").toLowerCase().trim();
+        const sidLama = String(row.sidlama || "").toLowerCase().trim();
+        
+        return customerSet.has(idPel) || customerSet.has(namePel) || customerSet.has(sidBaru) || customerSet.has(sidLama);
+      });
+    }
+
+    return data;
+  }, [originalData, selectedSBU, fileType, limitToBranch, branchCustomers]);
 
   const sidFrequency = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -653,6 +733,39 @@ export function Dashboard({ data, periods = [], activePeriodId = null, onPeriodS
                 <ChevronDown className="h-4 w-4" />
               </div>
             </div>
+
+            {/* Jawa Tengah Branch Customers Filter */}
+            {branchCustomers.length > 0 ? (
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl px-4 py-2.5 shadow-sm hover:bg-slate-50 cursor-pointer transition-colors select-none">
+                <input
+                  type="checkbox"
+                  checked={limitToBranch}
+                  onChange={(e) => setLimitToBranch(e.target.checked)}
+                  className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
+                />
+                <span className="text-slate-700 text-sm font-semibold">JT Branch ({branchCustomers.length})</span>
+                <button
+                  onClick={handleDeleteBranchCustomers}
+                  className="text-rose-500 hover:text-rose-700 ml-1.5 focus:outline-none flex items-center justify-center p-0.5 rounded hover:bg-rose-50 cursor-pointer"
+                  title="Clear Customer List"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </label>
+            ) : (
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleUploadBranchCustomers}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <button className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold rounded-xl text-sm transition-all shadow-sm active:scale-95 cursor-pointer">
+                  <Upload className="w-4 h-4 text-slate-500" />
+                  <span>Upload JT Branch Customers</span>
+                </button>
+              </div>
+            )}
 
             {/* Export Action */}
             <button
