@@ -516,7 +516,7 @@ app.delete("/api/period", async (req, res) => {
 });
 
 // Upload Endpoint
-app.post("/api/upload", upload.single("file"), (req, res) => {
+app.post("/api/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ detail: "No file uploaded" });
@@ -524,7 +524,17 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
     
     const type = req.body.type || "standard";
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
+    
+    // Smart sheet selection: search for sheet containing ticketing keywords, default to sheet 0
+    let sheetName = workbook.SheetNames[0];
+    for (const name of workbook.SheetNames) {
+      const norm = name.toLowerCase();
+      if (norm.includes("gangguan") || norm.includes("ticket") || norm.includes("data") || norm.includes("report")) {
+        sheetName = name;
+        break;
+      }
+    }
+    console.log(`Using sheet "${sheetName}" for data import`);
     const rawRows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
     if (type === "ticketing") {
@@ -695,83 +705,81 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
         saveCachePeriod(periodId, periodRows, stats);
       });
 
-      // Save to PostgreSQL asynchronously (so we don't block the client's quick upload response)
-      (async () => {
+      // Save to PostgreSQL synchronously to prevent race conditions during immediate redirect
+      try {
+        const p = getDbPool();
+        const client = await p.connect();
         try {
-          const p = getDbPool();
-          const client = await p.connect();
-          try {
-            for (const [periodId, periodRows] of Object.entries(partitionedPeriods)) {
-              const stats = periodStats[periodId];
-              const [yearStr, monthStr] = periodId.split("-");
-              const year = parseInt(yearStr);
-              const month = parseInt(monthStr);
-              const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-              const label = `${monthNames[month - 1]} ${year}`;
+          for (const [periodId, periodRows] of Object.entries(partitionedPeriods)) {
+            const stats = periodStats[periodId];
+            const [yearStr, monthStr] = periodId.split("-");
+            const year = parseInt(yearStr);
+            const month = parseInt(monthStr);
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const label = `${monthNames[month - 1]} ${year}`;
 
-              console.log(`Writing period metadata to PostgreSQL for period: ${periodId}`);
-              
-              await client.query("BEGIN");
+            console.log(`Writing period metadata to PostgreSQL for period: ${periodId}`);
+            
+            await client.query("BEGIN");
 
-              // Insert or update period
+            // Insert or update period
+            await client.query(
+              `INSERT INTO periods (id, year, month, label, total_rows, uploaded_at, file_name, file_type, stats)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               ON CONFLICT (id) DO UPDATE SET 
+                 year = EXCLUDED.year,
+                 month = EXCLUDED.month,
+                 label = EXCLUDED.label,
+                 total_rows = EXCLUDED.total_rows,
+                 uploaded_at = EXCLUDED.uploaded_at,
+                 file_name = EXCLUDED.file_name,
+                 file_type = EXCLUDED.file_type,
+                 stats = EXCLUDED.stats`,
+              [
+                periodId,
+                year,
+                month,
+                label,
+                periodRows.length,
+                new Date().toISOString(),
+                req.file.originalname,
+                "ticketing",
+                JSON.stringify(stats)
+              ]
+            );
+
+            // Delete existing chunks for this period
+            await client.query("DELETE FROM period_chunks WHERE period_id = $1", [periodId]);
+
+            // Chunk rows and insert
+            const chunkSize = 150;
+            for (let i = 0; i < periodRows.length; i += chunkSize) {
+              const chunkRows = periodRows.slice(i, i + chunkSize);
+              const chunkIdx = Math.floor(i / chunkSize);
+
               await client.query(
-                `INSERT INTO periods (id, year, month, label, total_rows, uploaded_at, file_name, file_type, stats)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                 ON CONFLICT (id) DO UPDATE SET 
-                   year = EXCLUDED.year,
-                   month = EXCLUDED.month,
-                   label = EXCLUDED.label,
-                   total_rows = EXCLUDED.total_rows,
-                   uploaded_at = EXCLUDED.uploaded_at,
-                   file_name = EXCLUDED.file_name,
-                   file_type = EXCLUDED.file_type,
-                   stats = EXCLUDED.stats`,
+                `INSERT INTO period_chunks (period_id, chunk_index, rows)
+                 VALUES ($1, $2, $3)`,
                 [
                   periodId,
-                  year,
-                  month,
-                  label,
-                  periodRows.length,
-                  new Date().toISOString(),
-                  req.file.originalname,
-                  "ticketing",
-                  JSON.stringify(stats)
+                  chunkIdx,
+                  JSON.stringify(chunkRows)
                 ]
               );
-
-              // Delete existing chunks for this period
-              await client.query("DELETE FROM period_chunks WHERE period_id = $1", [periodId]);
-
-              // Chunk rows and insert
-              const chunkSize = 150;
-              for (let i = 0; i < periodRows.length; i += chunkSize) {
-                const chunkRows = periodRows.slice(i, i + chunkSize);
-                const chunkIdx = Math.floor(i / chunkSize);
-
-                await client.query(
-                  `INSERT INTO period_chunks (period_id, chunk_index, rows)
-                   VALUES ($1, $2, $3)`,
-                  [
-                    periodId,
-                    chunkIdx,
-                    JSON.stringify(chunkRows)
-                  ]
-                );
-              }
-
-              await client.query("COMMIT");
-              console.log(`Successfully stored ${periodRows.length} rows to PostgreSQL for period ${periodId}.`);
             }
-          } catch (txErr) {
-            await client.query("ROLLBACK");
-            console.error("Database transaction failed inside upload async loop:", txErr);
-          } finally {
-            client.release();
+
+            await client.query("COMMIT");
+            console.log(`Successfully stored ${periodRows.length} rows to PostgreSQL for period ${periodId}.`);
           }
-        } catch (dbErr) {
-          console.error("Failed to save ticketing data to PostgreSQL:", dbErr);
+        } catch (txErr) {
+          await client.query("ROLLBACK");
+          console.error("Database transaction failed inside upload loop:", txErr);
+        } finally {
+          client.release();
         }
-      })();
+      } catch (dbErr) {
+        console.error("Failed to save ticketing data to PostgreSQL:", dbErr);
+      }
 
       return res.json({
         fileType: "ticketing",
