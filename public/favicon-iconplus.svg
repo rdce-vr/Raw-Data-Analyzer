@@ -1,0 +1,21 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Report rectangle -->
+  <rect x="8" y="8" width="36" height="44" rx="6" fill="#0055A4"/>
+
+  <!-- Report lines -->
+  <line x1="15" y1="19" x2="34" y2="19" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round"/>
+  <line x1="15" y1="28" x2="34" y2="28" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" opacity="0.85"/>
+  <line x1="15" y1="37" x2="26" y2="37" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Stopwatch button/crown -->
+  <rect x="41" y="12" width="7" height="6" rx="2" fill="#ED1C24" transform="rotate(-30 44.5 15)"/>
+
+  <!-- Stopwatch circle, overlapping bottom-right -->
+  <circle cx="46" cy="46" r="17" fill="#FFD100"/>
+  <circle cx="46" cy="46" r="13.5" fill="#0055A4" stroke="#FFFFFF" stroke-width="2"/>
+
+  <!-- Watch hands -->
+  <line x1="46" y1="46" x2="46" y2="36.5" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="46" y1="46" x2="53" y2="46" stroke="#ED1C24" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="46" cy="46" r="2.1" fill="#FFD100"/>
+</svg>
