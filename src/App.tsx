@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { PlnLogo } from './components/PlnLogo';
 import { FileUpload } from './components/FileUpload';
 import { Dashboard } from './components/Dashboard';
 import { RefreshCw, FileSpreadsheet, Github, Calendar, Trash2, Database, FolderOpen, ArrowRight, Loader2, Upload } from 'lucide-react';
@@ -214,10 +213,10 @@ export default function App() {
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-lg border-b border-slate-200/80 glass-panel">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <PlnLogo height={42} />
-            <div className="h-6 w-px bg-slate-200 mx-1.5 hidden sm:block"></div>
-            <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-blue-700 tracking-tight hidden sm:block">PLN IconSLA Analytics</span>
+          <div className="flex items-center gap-3">
+            <img src="/pln-logo.png" alt="PLN Icon Plus Logo" className="h-10 w-auto object-contain" />
+            <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+            <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-blue-700 tracking-tight hidden sm:block">Ticketing Report & SLA Dashboard</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -249,12 +248,12 @@ export default function App() {
           // Empty State - No Datasets Yet (Show Full-Screen Upload Form)
           <div className="flex-grow flex flex-col justify-center py-12 px-6">
             <div className="max-w-3xl mx-auto text-center space-y-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="inline-flex p-3 bg-cyan-50 text-cyan-600 rounded-2xl border border-cyan-100 shadow-sm">
-                <FileSpreadsheet className="w-8 h-8" />
+              <div className="inline-flex p-4 bg-white rounded-3xl border border-slate-200/80 shadow-md">
+                <img src="/pln-logo.png" alt="PLN Icon Plus Logo" className="h-16 w-auto object-contain" />
               </div>
               <div className="space-y-3">
                 <h1 className="text-4xl sm:text-5xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600">
-                  PLN IconSLA Analytics
+                  Ticketing Report & SLA Dashboard
                 </h1>
                 <p className="text-lg text-slate-500 max-w-xl mx-auto font-medium leading-relaxed">
                   Analyze, visualize, and optimize Service Level Agreement metrics from raw ticketing sheets and performance logs.
