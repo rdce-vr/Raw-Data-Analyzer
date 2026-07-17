@@ -231,7 +231,7 @@ export default function App() {
               </button>
             )}
             <a
-              href="https://github.com/NaufalTD/raw-data-manager"
+              href="https://github.com/rdce-vr/Raw-Data-Analyzer/"
               target="_blank"
               rel="noopener noreferrer"
               className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
