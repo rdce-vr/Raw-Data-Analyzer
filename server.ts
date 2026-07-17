@@ -276,6 +276,14 @@ function renameAndNormalize(rows: any[], targetColumns: string[]): any[] {
       colMap[h] = "durasigangguaminusstopclock";
       return;
     }
+    if (norm === "sumberlaporan" || norm === "sumber") {
+      colMap[h] = "namasumber";
+      return;
+    }
+    if (norm === "waktugangguan1" || norm === "waktugangguan1") {
+      colMap[h] = "waktugangguan2";
+      return;
+    }
 
     targetColumns.forEach(req => {
       const reqNorm = req.toLowerCase().replace(/[^a-z0-9]/g, "");
