@@ -108,7 +108,7 @@ export function DetailedRepeatingTickets({
                             <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Open Date</th>
                             <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Duration</th>
                             <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">Ticket Cause</th>
-                            <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">SBU Owner</th>
+                            <th className="px-4 py-2 font-extrabold text-[9px] tracking-wider">SBU Terminating</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -122,7 +122,7 @@ export function DetailedRepeatingTickets({
                                 {parseFloat(ticket.durasigangguanmenit || 0).toLocaleString('id-ID')} m ({formatMinutes(parseFloat(ticket.durasigangguanmenit || 0))})
                               </td>
                               <td className="px-4 py-2.5 text-slate-800 font-bold">{ticket.penyebab || '-'}</td>
-                              <td className="px-4 py-2.5 text-slate-500 font-semibold">{ticket.namasbu || '-'}</td>
+                              <td className="px-4 py-2.5 text-slate-500 font-semibold">{ticket.sbuter || '-'}</td>
                             </tr>
                           ))}
                         </tbody>

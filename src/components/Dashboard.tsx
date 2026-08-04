@@ -113,15 +113,15 @@ export function Dashboard({
     setRepPage(1);
   }, [repSearchQuery]);
 
-  // SBU Owner Filter Logic
+  // SBU Terminating Filter Logic
   const uniqueSBUOwners = useMemo(() => {
     if (fileType === 'ticketing') {
       if (stats?.sbu_counts) {
         return stats.sbu_counts.map((s: any) => s.name).sort();
       }
       if (!originalData) return [];
-      const owners = new Set<string>(originalData.map((row: any) => row.namasbu).filter(Boolean));
-      return Array.from(owners).sort();
+      const terminatingSet = new Set<string>(originalData.map((row: any) => row.sbuter).filter(Boolean));
+      return Array.from(terminatingSet).sort();
     }
     return [];
   }, [originalData, stats, fileType]);
@@ -134,9 +134,9 @@ export function Dashboard({
     if (fileType !== 'ticketing') return [];
     let data = originalData || [];
 
-    // 1. SBU Owner Filter
+    // 1. SBU Terminating Filter
     if (selectedSBU !== 'All') {
-      data = data.filter((row: any) => row.namasbu === selectedSBU);
+      data = data.filter((row: any) => row.sbuter === selectedSBU);
     }
 
     // 2. Branch Customer List Filter
@@ -183,7 +183,7 @@ export function Dashboard({
     const customerCounts: Record<string, number> = {};
 
     filteredData.forEach((row: any) => {
-      const sbu = row.namasbu;
+      const sbu = row.sbuter;
       const kp = row.namakp;
       const cust = row.namapelanggan;
       const st = row.status;
@@ -427,7 +427,7 @@ export function Dashboard({
           sid,
           customerName: String(row.namapelanggan || "Unknown Customer").trim(),
           repeats,
-          sbuOwner: String(row.namasbu || "-").trim(),
+          sbuOwner: String(row.sbuter || "-").trim(),
           dominantCause: String(row.penyebab || "-").trim(),
           totalDuration: 0,
           tickets: []
@@ -653,7 +653,7 @@ export function Dashboard({
                 onChange={(e) => setSelectedSBU(e.target.value)}
                 className="appearance-none bg-slate-50 border border-slate-300 text-slate-750 py-2.5 pl-4 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-semibold cursor-pointer hover:bg-slate-100 transition-colors"
               >
-                <option value="All">All SBU Owners</option>
+                <option value="All">All SBU Terminating</option>
                 {uniqueSBUOwners.map((sbu: string) => (
                   <option key={sbu} value={sbu}>
                     {sbu}

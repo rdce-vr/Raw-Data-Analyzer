@@ -12,6 +12,36 @@ import { REQUIRED_COLUMNS, TICKETING_COLUMNS, renameAndNormalize, parseDurationT
 // Inject parseExcelDate into cache layer to prevent circular reference issues
 setParseExcelDate(parseExcelDate);
 
+const DASHBOARD_REQUIRED_KEYS = [
+  "idtiket",
+  "idpelanggan",
+  "namapelanggan",
+  "sidbaru",
+  "sidlama",
+  "namakp",
+  "sbuter",
+  "status",
+  "waktulapor",
+  "tanggalinsiden",
+  "waktugangguan2",
+  "durasigangguanmenit",
+  "penyebab",
+  "durasigangguan"
+];
+
+function trimRowsForDashboard(rows: any[]) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map(row => {
+    const trimmed: any = {};
+    DASHBOARD_REQUIRED_KEYS.forEach(key => {
+      if (row[key] !== undefined) {
+        trimmed[key] = row[key];
+      }
+    });
+    return trimmed;
+  });
+}
+
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const CACHE_FILE = path.join(process.cwd(), "server_cache_v2.json");
@@ -91,7 +121,7 @@ app.get("/api/period-data", async (req, res) => {
         fileName: periodData.fileName || "Imported Database",
         columns: aggregatedRows.length > 0 ? Object.keys(aggregatedRows[0]) : [],
         totalRows: periodData.totalRows || aggregatedRows.length,
-        originalData: aggregatedRows,
+        originalData: periodData.fileType === "ticketing" ? trimRowsForDashboard(aggregatedRows) : aggregatedRows,
         stats: periodData.stats,
         periodId
       });
@@ -108,7 +138,7 @@ app.get("/api/period-data", async (req, res) => {
         fileName: "Imported Cache",
         columns: rows.length > 0 ? Object.keys(rows[0]) : [],
         totalRows: rows.length,
-        originalData: rows,
+        originalData: trimRowsForDashboard(rows),
         stats: periodMetadata.stats,
         periodId
       });
@@ -151,7 +181,7 @@ app.get("/api/yearly-data", async (req, res) => {
         fileName: `Yearly Dashboard Summary - ${yearNum}`,
         columns: allRows.length > 0 ? Object.keys(allRows[0]) : [],
         totalRows: allRows.length,
-        originalData: allRows,
+        originalData: trimRowsForDashboard(allRows),
         stats: null,
         periodId: `yearly-${yearNum}`
       });
@@ -172,7 +202,7 @@ app.get("/api/yearly-data", async (req, res) => {
         fileName: `Yearly Dashboard Summary - ${yearNum}`,
         columns: allRows.length > 0 ? Object.keys(allRows[0]) : [],
         totalRows: allRows.length,
-        originalData: allRows,
+        originalData: trimRowsForDashboard(allRows),
         stats: null,
         periodId: `yearly-${yearNum}`
       });
@@ -213,7 +243,13 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     }
     
     const type = req.body.type || "standard";
-    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const workbook = xlsx.read(req.file.buffer, {
+      type: "buffer",
+      cellFormula: false,
+      cellHTML: false,
+      cellStyles: false,
+      cellText: false
+    });
     
     // Smart sheet selection: search for sheet containing ticketing keywords, default to sheet 0
     let sheetName = workbook.SheetNames[0];
@@ -243,6 +279,19 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
           }
         } else {
           row.namasbu = null;
+        }
+
+        if (row.sbuter !== undefined && row.sbuter !== null) {
+          const sbu = String(row.sbuter).toUpperCase().trim();
+          if (sbu === "JAWA TENGAH" || sbu === "JAWA BAGIAN TENGAH") {
+            row.sbuter = "JAWA BAGIAN TENGAH";
+          } else if (sbu === "NAN" || sbu === "NONE" || sbu === "") {
+            row.sbuter = null;
+          } else {
+            row.sbuter = sbu;
+          }
+        } else {
+          row.sbuter = null;
         }
       });
 
@@ -323,7 +372,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
             .slice(0, 50);
         };
 
-        const sbuCounts = getTopCounts("namasbu");
+        const sbuCounts = getTopCounts("sbuter");
         const kpCounts = getTopCounts("namakp");
         const customerCounts = getTopCounts("namapelanggan");
 
@@ -502,7 +551,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
         fileName: req.file.originalname,
         columns: partitionedPeriods[dominantPeriodId].length > 0 ? Object.keys(partitionedPeriods[dominantPeriodId][0]) : [],
         totalRows: partitionedPeriods[dominantPeriodId].length,
-        originalData: partitionedPeriods[dominantPeriodId],
+        originalData: trimRowsForDashboard(partitionedPeriods[dominantPeriodId]),
         stats: periodStats[dominantPeriodId],
         periodId: dominantPeriodId
       });
@@ -779,7 +828,13 @@ app.post("/api/branch-customers", upload.single("file"), async (req, res) => {
       return res.status(400).json({ detail: "No file uploaded" });
     }
 
-    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const workbook = xlsx.read(req.file.buffer, {
+      type: "buffer",
+      cellFormula: false,
+      cellHTML: false,
+      cellStyles: false,
+      cellText: false
+    });
     const sheetName = workbook.SheetNames[0];
     const rawRows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
 

@@ -135,7 +135,7 @@ export function HierarchicalLogs({
                                 <thead className="bg-slate-50 text-slate-550 font-bold uppercase tracking-wider border-b border-slate-200">
                                   <tr>
                                     <th className="px-4 py-2 text-[10px]">TICKET ID</th>
-                                    <th className="px-4 py-2 text-[10px]">SBU OWNER</th>
+                                    <th className="px-4 py-2 text-[10px]">SBU TERMINATING</th>
                                     <th className="px-4 py-2 text-[10px]">KP</th>
                                     <th className="px-4 py-2 text-[10px]">OPEN TICKET DATE</th>
                                     <th className="px-4 py-2 text-[10px]">TICKET DURATION</th>
@@ -147,7 +147,7 @@ export function HierarchicalLogs({
                                   {sidObj.tickets.map((t: any, idx: number) => (
                                     <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                                       <td className="px-4 py-2.5 font-mono font-extrabold text-cyan-600">{t.idtiket || '-'}</td>
-                                      <td className="px-4 py-2.5 text-slate-650 font-semibold">{t.namasbu || '-'}</td>
+                                      <td className="px-4 py-2.5 text-slate-650 font-semibold">{t.sbuter || '-'}</td>
                                       <td className="px-4 py-2.5 text-slate-550">{t.namakp || '-'}</td>
                                       <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">
                                         {formatDateVal(t.waktulapor || t.tanggalinsiden || t.waktugangguan2)}

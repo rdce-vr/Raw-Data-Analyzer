@@ -1,9 +1,16 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Upload, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 interface FileUploadProps {
   onUploadSuccess: (data: any) => void;
 }
+
+const UPLOAD_STEPS = [
+  "Uploading spreadsheet buffer...",
+  "Parsing sheets & headers...",
+  "Running bulk database write...",
+  "Caching regional statistics..."
+];
 
 export function FileUpload({ onUploadSuccess }: FileUploadProps) {
   const [uploadType, setUploadType] = useState<'ticketing'>('ticketing');
@@ -12,6 +19,20 @@ export function FileUpload({ onUploadSuccess }: FileUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [uploadStep, setUploadStep] = useState(0);
+
+  useEffect(() => {
+    let interval: any;
+    if (isUploading) {
+      setUploadStep(0);
+      interval = setInterval(() => {
+        setUploadStep((prev) => (prev < UPLOAD_STEPS.length - 1 ? prev + 1 : prev));
+      }, 800);
+    } else {
+      setUploadStep(0);
+    }
+    return () => clearInterval(interval);
+  }, [isUploading]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -173,8 +194,31 @@ export function FileUpload({ onUploadSuccess }: FileUploadProps) {
             <p className="text-slate-500 font-medium max-w-xs mx-auto">
               {success
                 ? 'Preparing your dashboard...'
-                : 'Drag & drop your .xlsx or .csv file here, or click to browse'}
+                : 'Drag & drop your .xlsx, .xlsb, or .csv file here, or click to browse'}
             </p>
+
+            {isUploading && (
+              <div className="mt-4 space-y-2 text-left max-w-xs mx-auto text-[11px] bg-slate-50 border border-slate-200/60 p-4 rounded-xl shadow-inner">
+                {UPLOAD_STEPS.map((step, idx) => {
+                  const isDone = uploadStep > idx;
+                  const isCurrent = uploadStep === idx;
+                  return (
+                    <div key={idx} className="flex items-center gap-2.5 transition-all duration-300">
+                      {isDone ? (
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                      ) : isCurrent ? (
+                        <Loader2 className="w-3.5 h-3.5 text-cyan-600 animate-spin flex-shrink-0" />
+                      ) : (
+                        <div className="w-3.5 h-3.5 rounded-full border border-slate-350 flex-shrink-0" />
+                      )}
+                      <span className={`font-semibold ${isDone ? 'text-slate-400 line-through' : isCurrent ? 'text-cyan-700 font-black' : 'text-slate-550'}`}>
+                        {step}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">

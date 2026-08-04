@@ -21,7 +21,7 @@ export function DashboardMetrics({
         <span className="text-xs font-semibold text-cyan-600 bg-cyan-50 px-2.5 py-1 rounded-md mt-3 inline-block">Volume</span>
       </div>
       <div className="border border-slate-200/80 shadow-md shadow-slate-100/50 p-6 rounded-2xl hover:shadow-lg transition-all duration-300 glass-card hover:-translate-y-1">
-        <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">SBU OWNERS</p>
+        <p className="text-slate-500 text-xs font-bold tracking-wider uppercase">SBU TERMINATING</p>
         <h3 className="text-3xl font-black text-slate-900 mt-2">{sbuCount.toLocaleString('id-ID')}</h3>
         <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md mt-3 inline-block">Regions</span>
       </div>
