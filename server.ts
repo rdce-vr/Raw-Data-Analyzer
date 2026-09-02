@@ -91,7 +91,14 @@ app.get("/api/period-data", async (req, res) => {
 
     // Fast-path in-memory cache to return instant 0ms responses on repeated period view
     if (inMemoryResponseCache.has(periodId)) {
-      return res.json(inMemoryResponseCache.get(periodId)!.payload);
+      const cached = inMemoryResponseCache.get(periodId)!;
+      const etag = `W/"${periodId}-${cached.cachedAt}"`;
+      if (req.headers["if-none-match"] === etag) {
+        return res.status(304).end();
+      }
+      res.setHeader("ETag", etag);
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+      return res.json(cached.payload);
     }
     
     try {
@@ -137,7 +144,10 @@ app.get("/api/period-data", async (req, res) => {
         periodId
       };
 
-      inMemoryResponseCache.set(periodId, { payload, cachedAt: Date.now() });
+      const now = Date.now();
+      inMemoryResponseCache.set(periodId, { payload, cachedAt: now });
+      res.setHeader("ETag", `W/"${periodId}-${now}"`);
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
       return res.json(payload);
     } catch (dbErr) {
       console.log("Database lookup failed, falling back to local JSON cache for period data:", dbErr);
@@ -156,7 +166,10 @@ app.get("/api/period-data", async (req, res) => {
         stats: periodMetadata.stats,
         periodId
       };
-      inMemoryResponseCache.set(periodId, { payload, cachedAt: Date.now() });
+      const now = Date.now();
+      inMemoryResponseCache.set(periodId, { payload, cachedAt: now });
+      res.setHeader("ETag", `W/"${periodId}-${now}"`);
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
       return res.json(payload);
     }
   } catch (err: any) {
@@ -177,7 +190,14 @@ app.get("/api/yearly-data", async (req, res) => {
 
     // Fast-path in-memory cache for yearly summary
     if (inMemoryResponseCache.has(cacheKey)) {
-      return res.json(inMemoryResponseCache.get(cacheKey)!.payload);
+      const cached = inMemoryResponseCache.get(cacheKey)!;
+      const etag = `W/"${cacheKey}-${cached.cachedAt}"`;
+      if (req.headers["if-none-match"] === etag) {
+        return res.status(304).end();
+      }
+      res.setHeader("ETag", etag);
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+      return res.json(cached.payload);
     }
 
     try {
@@ -208,7 +228,10 @@ app.get("/api/yearly-data", async (req, res) => {
         periodId: cacheKey
       };
 
-      inMemoryResponseCache.set(cacheKey, { payload, cachedAt: Date.now() });
+      const now = Date.now();
+      inMemoryResponseCache.set(cacheKey, { payload, cachedAt: now });
+      res.setHeader("ETag", `W/"${cacheKey}-${now}"`);
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
       return res.json(payload);
     } catch (dbErr) {
       console.log("Database lookup failed, falling back to local JSON cache for yearly data:", dbErr);
@@ -231,7 +254,10 @@ app.get("/api/yearly-data", async (req, res) => {
         stats: null,
         periodId: cacheKey
       };
-      inMemoryResponseCache.set(cacheKey, { payload, cachedAt: Date.now() });
+      const now = Date.now();
+      inMemoryResponseCache.set(cacheKey, { payload, cachedAt: now });
+      res.setHeader("ETag", `W/"${cacheKey}-${now}"`);
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
       return res.json(payload);
     }
   } catch (err: any) {
