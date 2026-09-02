@@ -286,11 +286,15 @@ export default function App() {
           <div className="flex items-center gap-3">
             {periods.length > 0 && (
               <button
-                onClick={handleReset}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all duration-150 border border-slate-200 active:scale-95 cursor-pointer"
+                onClick={() => setShowUploadForm(!showUploadForm)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shadow-sm active:scale-95 cursor-pointer border ${
+                  showUploadForm
+                    ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-900'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Reset to Yearly view</span>
+                <FolderOpen className="w-3.5 h-3.5" />
+                <span>{showUploadForm ? "Hide Manager" : "Upload & Manage"}</span>
               </button>
             )}
             <a
@@ -330,42 +334,6 @@ export default function App() {
         ) : (
           // Data is Available in the Database (Show Yearly/Monthly Dashboard)
           <div className="px-6 py-8">
-            {/* Minimal Header / Dataset Management Bar */}
-            <div className="max-w-7xl mx-auto mb-6 flex items-center justify-between gap-4 p-4 bg-white border border-slate-200/80 rounded-2xl shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-cyan-50 text-cyan-600 rounded-xl border border-cyan-100">
-                  <Database className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="text-xs font-extrabold text-slate-800 block">
-                    {activePeriodId 
-                      ? `Viewing: ${periods.find(p => p.id === activePeriodId)?.label || activePeriodId}`
-                      : `Viewing: ${selectedYear} Full Year Summary`
-                    }
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-semibold block">
-                    {activePeriodId 
-                      ? "Monthly breakdown active" 
-                      : `Aggregated across all ${periods.filter(p => (p.year || parseInt(p.id.split('-')[0])) === selectedYear).length} uploaded months`
-                    }
-                  </span>
-                </div>
-              </div>
-
-              {/* Upload & Manage Toggle Button */}
-              <button
-                onClick={() => setShowUploadForm(!showUploadForm)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shadow-sm active:scale-95 cursor-pointer border ${
-                  showUploadForm
-                    ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-900'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <FolderOpen className="w-3.5 h-3.5" />
-                <span>{showUploadForm ? "Hide Manager" : "Upload & Manage"}</span>
-              </button>
-            </div>
-
             {/* Collapsible Upload Form & Dataset Manager */}
             {showUploadForm && (
               <div className="max-w-7xl mx-auto mb-8 bg-slate-50/50 p-6 border border-slate-200 rounded-2xl border-dashed">
