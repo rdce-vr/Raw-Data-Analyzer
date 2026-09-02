@@ -32,7 +32,7 @@ The codebase has been refactored into a clean, modular structure:
 ## Run Locally
 
 ### Prerequisites
-* Node.js (v20+)
+* Node.js (v22+ LTS or v24+)
 * PostgreSQL (or rely on the automatic partitioned local JSON file cache)
 
 ### Setup & Run
