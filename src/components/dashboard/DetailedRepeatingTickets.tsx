@@ -61,38 +61,46 @@ export function DetailedRepeatingTickets({
                 {/* SID Header Row */}
                 <div 
                   onClick={() => setExpandedRepSIDs(prev => ({ ...prev, [group.sid]: !isExpanded }))}
-                  className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
+                  className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <span className="bg-indigo-50 text-indigo-750 font-mono font-bold text-xs px-2.5 py-1 rounded-lg border border-indigo-100">
+                  {/* Column 1: SID & Customer Info */}
+                  <div className="flex items-center gap-3 lg:w-5/12 min-w-0">
+                    <span className="bg-indigo-50 text-indigo-750 font-mono font-bold text-xs px-2.5 py-1 rounded-lg border border-indigo-100 flex-shrink-0">
                       {group.sid}
                     </span>
-                    <div className="space-y-0.5">
-                      <span className="font-extrabold text-slate-800 text-sm block sm:inline">{group.customerName}</span>
-                      <span className="text-[10px] text-slate-400 font-semibold sm:ml-2 block sm:inline">({group.sbuOwner})</span>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-extrabold text-slate-800 text-sm truncate block" title={group.customerName}>
+                        {group.customerName}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-semibold block truncate">
+                        {group.sbuOwner}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 sm:gap-6">
-                    <div className="text-left md:text-right">
-                      <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Dominant Cause</span>
-                      <span className="text-xs text-slate-700 font-bold block">{group.dominantCause}</span>
-                    </div>
+                  {/* Column 2: Dominant Cause */}
+                  <div className="lg:w-3/12 min-w-0">
+                    <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Dominant Cause</span>
+                    <span className="text-xs text-slate-700 font-bold block truncate" title={group.dominantCause}>
+                      {group.dominantCause || '-'}
+                    </span>
+                  </div>
 
-                    <div className="text-left md:text-right">
-                      <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Total Duration</span>
-                      <span className="text-xs font-mono text-slate-700 font-bold block">
-                        {group.totalDuration.toLocaleString('id-ID')} mins ({formatMinutes(group.totalDuration)})
-                      </span>
-                    </div>
+                  {/* Column 3: Total Duration */}
+                  <div className="lg:w-2/12 min-w-0 text-left lg:text-right">
+                    <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-extrabold">Total Duration</span>
+                    <span className="text-xs font-mono text-slate-700 font-bold block truncate">
+                      {formatMinutes(group.totalDuration)}
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="bg-rose-50 border border-rose-100 text-rose-700 px-3 py-1 rounded-full font-black text-xs">
-                        {group.repeats}x Repeats
-                      </span>
-                      <div className="text-slate-400 p-1">
-                        <ChevronDown className={`w-4 h-4 transform transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-650' : ''}`} />
-                      </div>
+                  {/* Column 4: Repeats & Expand Chevron */}
+                  <div className="lg:w-2/12 flex items-center justify-between lg:justify-end gap-3 flex-shrink-0">
+                    <span className="bg-rose-50 border border-rose-100 text-rose-700 px-3 py-1 rounded-full font-black text-xs whitespace-nowrap">
+                      {group.repeats}x Repeats
+                    </span>
+                    <div className="text-slate-400 p-1 flex-shrink-0">
+                      <ChevronDown className={`w-4 h-4 transform transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-650' : ''}`} />
                     </div>
                   </div>
                 </div>
