@@ -50,11 +50,32 @@ export async function initializeDbSchema() {
         )
       `);
       
-      // Create branch_customers table
+      // Create branch_customers table (legacy fallback)
       await client.query(`
         CREATE TABLE IF NOT EXISTS branch_customers (
           value VARCHAR(255) PRIMARY KEY,
           uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Create branch_filter_versions table
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS branch_filter_versions (
+          id VARCHAR(50) PRIMARY KEY,
+          name VARCHAR(150) NOT NULL,
+          item_count INT NOT NULL DEFAULT 0,
+          is_active BOOLEAN DEFAULT false,
+          file_name VARCHAR(255),
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Create branch_filter_items table
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS branch_filter_items (
+          id SERIAL PRIMARY KEY,
+          version_id VARCHAR(50) NOT NULL REFERENCES branch_filter_versions(id) ON DELETE CASCADE,
+          value VARCHAR(255) NOT NULL
         )
       `);
 
@@ -63,7 +84,33 @@ export async function initializeDbSchema() {
         CREATE INDEX IF NOT EXISTS idx_periods_year_month ON periods(year, month);
         CREATE INDEX IF NOT EXISTS idx_period_chunks_period_id ON period_chunks(period_id);
         CREATE INDEX IF NOT EXISTS idx_period_chunks_period_chunk ON period_chunks(period_id, chunk_index);
+        CREATE INDEX IF NOT EXISTS idx_branch_filter_items_version ON branch_filter_items(version_id);
       `);
+
+      // Auto-migrate legacy branch_customers to default version 1 if no versions exist
+      const verCheck = await client.query("SELECT COUNT(*) FROM branch_filter_versions");
+      if (parseInt(verCheck.rows[0].count, 10) === 0) {
+        const legacyItems = await client.query("SELECT value FROM branch_customers");
+        if (legacyItems.rows.length > 0) {
+          console.log(`Migrating ${legacyItems.rows.length} legacy branch customer items to Version 1...`);
+          const v1Id = `v-${Date.now()}`;
+          await client.query(
+            `INSERT INTO branch_filter_versions (id, name, item_count, is_active, file_name)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [v1Id, "Jawa Tengah - Initial Active List (v1)", legacyItems.rows.length, true, "Initial Database Records"]
+          );
+          const batchSize = 100;
+          for (let i = 0; i < legacyItems.rows.length; i += batchSize) {
+            const batch = legacyItems.rows.slice(i, i + batchSize);
+            const placeholders = batch.map((_, idx) => `($1, $${idx + 2})`).join(", ");
+            const values = [v1Id, ...batch.map(r => r.value)];
+            await client.query(
+              `INSERT INTO branch_filter_items (version_id, value) VALUES ${placeholders}`,
+              values
+            );
+          }
+        }
+      }
       
       console.log("Database schema initialized successfully.");
     } finally {

@@ -13,22 +13,41 @@ export default function App() {
   const [isLoadingYearly, setIsLoadingYearly] = useState<boolean>(false);
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
   const [branchCustomers, setBranchCustomers] = useState<string[]>([]);
+  const [filterVersions, setFilterVersions] = useState<any[]>([]);
+  const [activeFilterVersion, setActiveFilterVersion] = useState<any>(null);
   const [limitToBranch, setLimitToBranch] = useState<boolean>(true);
   const [isUploadingBranch, setIsUploadingBranch] = useState<boolean>(false);
+  const [newVersionName, setNewVersionName] = useState<string>('');
 
-  // Fetch branch customer list on component mount
+  // Fetch branch customer list & versions
+  const fetchFilterVersions = async () => {
+    try {
+      const res = await fetch('/api/branch-filter-versions');
+      if (res.ok) {
+        const data = await res.json();
+        setFilterVersions(data.versions || []);
+      }
+    } catch (err) {
+      console.error('Error fetching filter versions:', err);
+    }
+  };
+
+  const fetchBranchCustomers = async () => {
+    try {
+      const res = await fetch('/api/branch-customers');
+      if (res.ok) {
+        const data = await res.json();
+        setBranchCustomers(data.values || []);
+        setActiveFilterVersion(data.activeVersion || null);
+      }
+    } catch (err) {
+      console.error('Error fetching branch customers:', err);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/branch-customers')
-      .then(res => {
-        if (res.ok) return res.json();
-        throw new Error('Failed to load branch customer list');
-      })
-      .then(data => {
-        if (Array.isArray(data.values)) {
-          setBranchCustomers(data.values);
-        }
-      })
-      .catch(err => console.error('Error fetching branch customers:', err));
+    fetchBranchCustomers();
+    fetchFilterVersions();
   }, []);
 
   const handleUploadBranchCustomers = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,10 +56,13 @@ export default function App() {
     
     const formData = new FormData();
     formData.append('file', file);
+    if (newVersionName.trim()) {
+      formData.append('name', newVersionName.trim());
+    }
     setIsUploadingBranch(true);
 
     try {
-      const response = await fetch('/api/branch-customers', {
+      const response = await fetch('/api/branch-filter-versions', {
         method: 'POST',
         body: formData
       });
@@ -48,31 +70,49 @@ export default function App() {
         const err = await response.json();
         throw new Error(err.detail || 'Upload failed');
       }
-      const result = await response.json();
-      setBranchCustomers(result.values || []);
+      setNewVersionName('');
+      await fetchBranchCustomers();
+      await fetchFilterVersions();
       setLimitToBranch(true);
     } catch (err: any) {
       alert('Failed to upload branch customer list: ' + err.message);
     } finally {
       setIsUploadingBranch(false);
+      e.target.value = '';
     }
   };
 
-  const handleDeleteBranchCustomers = async (e: React.MouseEvent) => {
+  const handleActivateFilterVersion = async (versionId: string) => {
+    try {
+      const res = await fetch(`/api/branch-filter-versions/${versionId}/activate`, {
+        method: 'PUT'
+      });
+      if (res.ok) {
+        await fetchBranchCustomers();
+        await fetchFilterVersions();
+      } else {
+        alert('Failed to activate filter version.');
+      }
+    } catch (err) {
+      console.error('Error activating filter version:', err);
+    }
+  };
+
+  const handleDeleteFilterVersion = async (versionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!confirm('Are you sure you want to clear the registered Jawa Tengah branch customer list?')) return;
-    
+    if (!confirm('Are you sure you want to delete this customer filter version?')) return;
+
     try {
-      const response = await fetch('/api/branch-customers', {
+      const res = await fetch(`/api/branch-filter-versions/${versionId}`, {
         method: 'DELETE'
       });
-      if (response.ok) {
-        setBranchCustomers([]);
-        setLimitToBranch(false);
+      if (res.ok) {
+        await fetchBranchCustomers();
+        await fetchFilterVersions();
       }
-    } catch (err: any) {
-      console.error('Error clearing branch customer list:', err);
+    } catch (err) {
+      console.error('Error deleting filter version:', err);
     }
   };
 
@@ -341,59 +381,106 @@ export default function App() {
                     <FileUpload onUploadSuccess={handleUploadSuccess} />
                   </div>
 
-                  {/* Column 2: Branch Filter Management */}
-                  <div className="p-6 border border-slate-200/80 rounded-2xl shadow-sm flex flex-col glass-card justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Jawa Tengah Branch Filter</h4>
-                      <p className="text-xs text-slate-500 font-semibold leading-relaxed mb-4">
-                        Upload a spreadsheet containing a list of customer names, Customer IDs, or Service IDs (SIDs) belonging to the Jawa Tengah branch.
-                      </p>
-                      
-                      {branchCustomers.length > 0 ? (
-                        <div className="p-3 bg-cyan-50/50 border border-cyan-100 rounded-xl flex items-center justify-between">
-                          <div>
-                            <span className="font-extrabold text-xs text-cyan-800 block">Jawa Tengah Filter List</span>
-                            <span className="text-[10px] text-cyan-600 font-bold block mt-0.5">{branchCustomers.length} entries registered</span>
-                          </div>
-                          <button
-                            onClick={handleDeleteBranchCustomers}
-                            className="p-1.5 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-lg transition-colors cursor-pointer"
-                            title="Delete filter list"
+                  {/* Column 2: Branch Filter Version Management */}
+                  <div className="p-6 border border-slate-200/80 rounded-2xl shadow-sm flex flex-col glass-card">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Branch Filter Lists ({filterVersions.length})</h4>
+                      <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-100 px-2 py-0.5 rounded-full">
+                        Versioning
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-500 font-semibold leading-relaxed mb-3">
+                      Manage and track different baseline lists of customer names and SIDs over time.
+                    </p>
+
+                    {/* Versions List */}
+                    <div className="flex-grow space-y-2.5 max-h-[190px] overflow-y-auto pr-1 mb-4">
+                      {filterVersions.length > 0 ? (
+                        filterVersions.map((v) => (
+                          <div
+                            key={v.id}
+                            className={`p-3 rounded-xl border transition-all duration-150 flex items-center justify-between text-left ${
+                              v.isActive
+                                ? 'bg-cyan-50/60 border-cyan-300 ring-1 ring-cyan-200'
+                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                            }`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                            <div className="min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800 text-xs truncate block">{v.name}</span>
+                                {v.isActive && (
+                                  <span className="text-[9px] bg-cyan-600 text-white font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider">
+                                    Active
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                                {v.itemCount?.toLocaleString("id-ID") || 0} SIDs • {new Date(v.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              {!v.isActive && (
+                                <button
+                                  onClick={() => handleActivateFilterVersion(v.id)}
+                                  className="px-2 py-1 bg-white hover:bg-cyan-50 text-cyan-700 border border-slate-200 hover:border-cyan-300 font-bold text-[10px] rounded-lg transition-all cursor-pointer"
+                                  title="Set as active filter"
+                                >
+                                  Activate
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => handleDeleteFilterVersion(v.id, e)}
+                                className="p-1.5 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-lg transition-colors cursor-pointer"
+                                title="Delete filter version"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
                       ) : (
-                        <div className="p-6 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center text-slate-450 text-xs font-semibold">
-                          No filter list uploaded yet.
+                        <div className="p-4 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center text-slate-400 text-xs font-semibold">
+                          No filter versions uploaded yet.
                         </div>
                       )}
                     </div>
 
-                    <div className="relative mt-4">
+                    {/* Upload New Version Form */}
+                    <div className="space-y-2 pt-3 border-t border-slate-200">
                       <input
-                        type="file"
-                        accept=".xlsx, .xls, .xlsb, .csv"
-                        onChange={handleUploadBranchCustomers}
-                        disabled={isUploadingBranch}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        type="text"
+                        placeholder="Version Name (e.g., Jawa Tengah - Aug 2026)"
+                        value={newVersionName}
+                        onChange={(e) => setNewVersionName(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-cyan-500 font-semibold text-slate-700"
                       />
-                      <button 
-                        disabled={isUploadingBranch}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-cyan-500/10 active:scale-95 cursor-pointer disabled:opacity-50"
-                      >
-                        {isUploadingBranch ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Uploading...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4" />
-                            <span>Upload JT Branch List</span>
-                          </>
-                        )}
-                      </button>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".xlsx, .xls, .xlsb, .csv"
+                          onChange={handleUploadBranchCustomers}
+                          disabled={isUploadingBranch}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <button 
+                          disabled={isUploadingBranch}
+                          className="w-full flex items-center justify-center gap-2 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-cyan-500/10 active:scale-95 cursor-pointer disabled:opacity-50"
+                        >
+                          {isUploadingBranch ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Saving Version...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>Upload New Filter Version</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -451,6 +538,9 @@ export default function App() {
                 onPeriodSelect={handlePeriodSelect}
                 onYearSelect={setSelectedYear}
                 branchCustomers={branchCustomers}
+                filterVersions={filterVersions}
+                activeFilterVersion={activeFilterVersion}
+                onActivateFilterVersion={handleActivateFilterVersion}
                 limitToBranch={limitToBranch}
                 setLimitToBranch={setLimitToBranch}
               />

@@ -854,12 +854,32 @@ app.get("/api/export", (req, res) => {
   }
 });
 
-// Upload a list of customers belonging to the branch
-app.post("/api/branch-customers", upload.single("file"), async (req, res) => {
+// Get all branch customer filter versions
+app.get("/api/branch-filter-versions", async (req, res) => {
+  try {
+    const p = getDbPool();
+    const result = await p.query(
+      `SELECT id, name, item_count as "itemCount", is_active as "isActive", 
+              file_name as "fileName", created_at as "createdAt"
+       FROM branch_filter_versions 
+       ORDER BY created_at DESC`
+    );
+    return res.json({ versions: result.rows });
+  } catch (err: any) {
+    console.error("Error fetching filter versions:", err);
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// Create and upload a new branch customer filter version
+app.post("/api/branch-filter-versions", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ detail: "No file uploaded" });
     }
+
+    const versionName = (req.body.name || "").trim() || `Branch Filter ${new Date().toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}`;
+    const setActive = req.body.setActive !== "false";
 
     const workbook = xlsx.read(req.file.buffer, {
       type: "buffer",
@@ -875,7 +895,7 @@ app.post("/api/branch-customers", upload.single("file"), async (req, res) => {
       return res.status(400).json({ detail: "Uploaded spreadsheet is empty" });
     }
 
-    // Extract all unique values from all cells in the sheet (trimming strings, skipping nulls/empties)
+    // Extract all unique values from all cells in the sheet
     const valuesSet = new Set<string>();
     rawRows.forEach((row: any) => {
       Object.values(row).forEach((val: any) => {
@@ -891,24 +911,37 @@ app.post("/api/branch-customers", upload.single("file"), async (req, res) => {
       return res.status(400).json({ detail: "No valid customer values found in file" });
     }
 
-    // Save to cache
-    let cache = loadCache();
-    if (!cache) {
-      cache = { type: "multi-period-ticketing", periods: {} };
-    }
-    cache.branchCustomers = values;
-    saveCache(cache);
-
-    // Save to database
+    const versionId = `v-${Date.now()}`;
+    const p = getDbPool();
+    const client = await p.connect();
     try {
-      const p = getDbPool();
-      const client = await p.connect();
-      try {
-        await client.query("BEGIN");
+      await client.query("BEGIN");
+
+      if (setActive) {
+        await client.query("UPDATE branch_filter_versions SET is_active = false");
+      }
+
+      await client.query(
+        `INSERT INTO branch_filter_versions (id, name, item_count, is_active, file_name)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [versionId, versionName, values.length, setActive, req.file.originalname]
+      );
+
+      // Insert items in batches
+      const batchSize = 100;
+      for (let i = 0; i < values.length; i += batchSize) {
+        const batch = values.slice(i, i + batchSize);
+        const placeholders = batch.map((_, idx) => `($1, $${idx + 2})`).join(", ");
+        const insertVals = [versionId, ...batch];
+        await client.query(
+          `INSERT INTO branch_filter_items (version_id, value) VALUES ${placeholders}`,
+          insertVals
+        );
+      }
+
+      // If active, also synchronize to legacy table and cache
+      if (setActive) {
         await client.query("DELETE FROM branch_customers");
-        
-        // Insert in batches
-        const batchSize = 100;
         for (let i = 0; i < values.length; i += batchSize) {
           const batch = values.slice(i, i + batchSize);
           await client.query(
@@ -916,34 +949,193 @@ app.post("/api/branch-customers", upload.single("file"), async (req, res) => {
             batch
           );
         }
-        await client.query("COMMIT");
-      } finally {
-        client.release();
+        let cache = loadCache() || { type: "multi-period-ticketing", periods: {} };
+        cache.branchCustomers = values;
+        saveCache(cache);
       }
-    } catch (dbErr) {
-      console.error("Database save failed for branch customers:", dbErr);
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
     }
 
-    return res.json({ success: true, count: values.length, values });
+    return res.json({
+      success: true,
+      version: {
+        id: versionId,
+        name: versionName,
+        itemCount: values.length,
+        isActive: setActive,
+        fileName: req.file.originalname,
+        createdAt: new Date().toISOString()
+      },
+      values
+    });
   } catch (err: any) {
-    console.error("Error uploading branch customers:", err);
+    console.error("Error creating branch filter version:", err);
     return res.status(500).json({ detail: err.message });
   }
 });
 
-// Fetch all registered branch customer list values
+// Switch active branch customer filter version
+app.put("/api/branch-filter-versions/:id/activate", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const p = getDbPool();
+    const client = await p.connect();
+    let values: string[] = [];
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE branch_filter_versions SET is_active = false");
+      const updateRes = await client.query(
+        "UPDATE branch_filter_versions SET is_active = true WHERE id = $1 RETURNING id, name, item_count",
+        [id]
+      );
+      if (updateRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ detail: "Version not found" });
+      }
+
+      const itemsRes = await client.query(
+        "SELECT value FROM branch_filter_items WHERE version_id = $1",
+        [id]
+      );
+      values = itemsRes.rows.map(r => r.value);
+
+      // Sync to legacy table & cache
+      await client.query("DELETE FROM branch_customers");
+      const batchSize = 100;
+      for (let i = 0; i < values.length; i += batchSize) {
+        const batch = values.slice(i, i + batchSize);
+        await client.query(
+          `INSERT INTO branch_customers (value) VALUES ${batch.map((_, idx) => `($${idx + 1})`).join(", ")} ON CONFLICT (value) DO NOTHING`,
+          batch
+        );
+      }
+      let cache = loadCache() || { type: "multi-period-ticketing", periods: {} };
+      cache.branchCustomers = values;
+      saveCache(cache);
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    return res.json({ success: true, activeVersionId: id, values });
+  } catch (err: any) {
+    console.error("Error activating filter version:", err);
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// Delete a specific branch filter version
+app.delete("/api/branch-filter-versions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const p = getDbPool();
+    const client = await p.connect();
+    try {
+      await client.query("BEGIN");
+      const verRes = await client.query(
+        "SELECT is_active FROM branch_filter_versions WHERE id = $1",
+        [id]
+      );
+      if (verRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ detail: "Version not found" });
+      }
+      const wasActive = verRes.rows[0].is_active;
+
+      // Delete version (cascade deletes items)
+      await client.query("DELETE FROM branch_filter_versions WHERE id = $1", [id]);
+
+      // If deleted version was active, activate the most recent remaining version if available
+      if (wasActive) {
+        const nextVer = await client.query(
+          "SELECT id FROM branch_filter_versions ORDER BY created_at DESC LIMIT 1"
+        );
+        if (nextVer.rowCount && nextVer.rowCount > 0) {
+          const nextId = nextVer.rows[0].id;
+          await client.query("UPDATE branch_filter_versions SET is_active = true WHERE id = $1", [nextId]);
+          const nextItems = await client.query("SELECT value FROM branch_filter_items WHERE version_id = $1", [nextId]);
+          const values = nextItems.rows.map(r => r.value);
+          await client.query("DELETE FROM branch_customers");
+          const batchSize = 100;
+          for (let i = 0; i < values.length; i += batchSize) {
+            const batch = values.slice(i, i + batchSize);
+            await client.query(
+              `INSERT INTO branch_customers (value) VALUES ${batch.map((_, idx) => `($${idx + 1})`).join(", ")} ON CONFLICT (value) DO NOTHING`,
+              batch
+            );
+          }
+          let cache = loadCache() || { type: "multi-period-ticketing", periods: {} };
+          cache.branchCustomers = values;
+          saveCache(cache);
+        } else {
+          await client.query("DELETE FROM branch_customers");
+          let cache = loadCache();
+          if (cache) {
+            delete cache.branchCustomers;
+            saveCache(cache);
+          }
+        }
+      }
+
+      await client.query("COMMIT");
+      return res.json({ success: true, message: `Version ${id} deleted` });
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
+    }
+  } catch (err: any) {
+    console.error("Error deleting filter version:", err);
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// Upload a list of customers belonging to the branch (legacy route adapter)
+app.post("/api/branch-customers", upload.single("file"), async (req, res) => {
+  // Delegate directly to branch-filter-versions
+  req.url = "/api/branch-filter-versions";
+  return app._router.handle(req, res);
+});
+
+// Fetch all registered branch customer list values and active version info
 app.get("/api/branch-customers", async (req, res) => {
   try {
-    // First try from database
+    const p = getDbPool();
     try {
-      const p = getDbPool();
-      const result = await p.query("SELECT value FROM branch_customers");
-      const list = result.rows.map((r: any) => r.value);
-      return res.json({ values: list });
+      // First check active version
+      const activeVerRes = await p.query(
+        "SELECT id, name, item_count as \"itemCount\", file_name as \"fileName\", created_at as \"createdAt\" FROM branch_filter_versions WHERE is_active = true LIMIT 1"
+      );
+      if (activeVerRes.rowCount && activeVerRes.rowCount > 0) {
+        const activeVer = activeVerRes.rows[0];
+        const itemsRes = await p.query(
+          "SELECT value FROM branch_filter_items WHERE version_id = $1",
+          [activeVer.id]
+        );
+        return res.json({
+          values: itemsRes.rows.map(r => r.value),
+          activeVersion: activeVer
+        });
+      }
+
+      // Fallback to legacy branch_customers table
+      const legacyRes = await p.query("SELECT value FROM branch_customers");
+      const list = legacyRes.rows.map((r: any) => r.value);
+      return res.json({ values: list, activeVersion: null });
     } catch (dbErr) {
-      // Fallback to cache
       const cache = loadCache();
-      return res.json({ values: cache?.branchCustomers || [] });
+      return res.json({ values: cache?.branchCustomers || [], activeVersion: null });
     }
   } catch (err: any) {
     return res.status(500).json({ detail: err.message });
@@ -953,16 +1145,16 @@ app.get("/api/branch-customers", async (req, res) => {
 // Clear registered branch customer list
 app.delete("/api/branch-customers", async (req, res) => {
   try {
-    // Delete from cache
     const cache = loadCache();
     if (cache) {
       delete cache.branchCustomers;
       saveCache(cache);
     }
 
-    // Delete from database
     try {
       const p = getDbPool();
+      await p.query("DELETE FROM branch_filter_versions");
+      await p.query("DELETE FROM branch_filter_items");
       await p.query("DELETE FROM branch_customers");
     } catch (dbErr) {
       console.error("Database delete failed for branch customers:", dbErr);

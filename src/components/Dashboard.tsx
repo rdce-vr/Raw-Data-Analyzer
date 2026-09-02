@@ -55,6 +55,9 @@ interface DashboardProps {
   onPeriodSelect?: (periodId: string) => void;
   onYearSelect?: (year: number) => void;
   branchCustomers: string[];
+  filterVersions?: any[];
+  activeFilterVersion?: any;
+  onActivateFilterVersion?: (versionId: string) => void;
   limitToBranch: boolean;
   setLimitToBranch: (val: boolean) => void;
 }
@@ -66,6 +69,9 @@ export function Dashboard({
   onPeriodSelect, 
   onYearSelect,
   branchCustomers = [],
+  filterVersions = [],
+  activeFilterVersion = null,
+  onActivateFilterVersion,
   limitToBranch = false,
   setLimitToBranch
 }: DashboardProps) {
@@ -112,6 +118,60 @@ export function Dashboard({
   useEffect(() => {
     setRepPage(1);
   }, [repSearchQuery]);
+
+  // Derived Year & Month options for the 13-Option Two-Stage Period Picker
+  const availableYears = useMemo(() => {
+    const yrs = Array.from(new Set(periods.map(p => p.year || parseInt(p.id.split('-')[0])))).filter(Boolean);
+    if (yrs.length === 0) return [data.year || new Date().getFullYear()];
+    return yrs.sort((a: any, b: any) => b - a);
+  }, [periods, data.year]);
+
+  const selectedYear = useMemo(() => {
+    if (activePeriodId && !activePeriodId.startsWith("yearly-")) {
+      const yr = parseInt(activePeriodId.split('-')[0]);
+      if (yr) return yr;
+    }
+    if (activePeriodId?.startsWith("yearly-")) {
+      const yr = parseInt(activePeriodId.replace("yearly-", ""));
+      if (yr) return yr;
+    }
+    if (data.year) return data.year;
+    return availableYears[0] || new Date().getFullYear();
+  }, [activePeriodId, data.year, availableYears]);
+
+  const monthOptions = useMemo(() => {
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    
+    // Count total yearly records
+    const yearPeriods = periods.filter(p => (p.year || parseInt(p.id.split('-')[0])) === selectedYear);
+    const totalYearRows = yearPeriods.reduce((acc, p) => acc + (p.totalRows || 0), 0);
+
+    const options = [
+      {
+        value: `yearly-${selectedYear}`,
+        label: `⭐ Full Year Summary (${(totalYearRows / 1000).toFixed(1)}k rows)`,
+        isAvailable: yearPeriods.length > 0,
+        count: totalYearRows
+      }
+    ];
+
+    for (let m = 1; m <= 12; m++) {
+      const monthPad = String(m).padStart(2, '0');
+      const periodKey = `${selectedYear}-${monthPad}`;
+      const periodObj = periods.find(p => p.id === periodKey);
+      const isAvailable = !!periodObj;
+      const count = periodObj?.totalRows || 0;
+      
+      options.push({
+        value: periodKey,
+        label: `${monthPad} - ${monthNames[m - 1]} ${isAvailable ? `(${count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count} rows)` : '(No Data)'}`,
+        isAvailable,
+        count
+      });
+    }
+
+    return options;
+  }, [periods, selectedYear]);
 
   // SBU Terminating Filter Logic
   const uniqueSBUOwners = useMemo(() => {
@@ -605,43 +665,75 @@ export function Dashboard({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 bg-white border border-slate-200/80 rounded-2xl shadow-sm">
           {/* Left side: Selectors and Filters */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Period Selector Filter */}
+            {/* Separated Year & Month Period Selectors */}
             {periods && periods.length > 0 && (
-              <div className="relative">
-                <select
-                  value={activePeriodId || `yearly-${data.year || new Date().getFullYear()}`}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.startsWith("yearly-")) {
-                      const yr = parseInt(val.replace("yearly-", ""));
-                      if (onYearSelect) onYearSelect(yr);
-                      if (onPeriodSelect) onPeriodSelect("");
-                    } else {
-                      if (onPeriodSelect) onPeriodSelect(val);
-                    }
-                  }}
-                  className="appearance-none bg-slate-50 border border-slate-300 text-slate-750 py-2.5 pl-10 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-extrabold cursor-pointer hover:bg-slate-100 transition-colors"
-                >
-                  {Array.from(new Set(periods.map(p => p.year || parseInt(p.id.split('-')[0])))).filter(Boolean).sort((a: any, b: any) => b - a).map((yr: any) => (
-                    <optgroup key={yr} label={`Year ${yr}`} className="font-bold text-slate-900">
-                      <option value={`yearly-${yr}`} className="font-bold text-cyan-600">
-                        ⭐ {yr} Full Year Summary
+              <div className="flex items-center gap-2">
+                {/* Year Selector */}
+                <div className="relative">
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => {
+                      const newYear = parseInt(e.target.value, 10);
+                      if (onYearSelect) onYearSelect(newYear);
+                      if (activePeriodId && !activePeriodId.startsWith("yearly-")) {
+                        const currentMonth = activePeriodId.split('-')[1];
+                        const targetPeriod = `${newYear}-${currentMonth}`;
+                        const exists = periods.some(p => p.id === targetPeriod);
+                        if (exists && onPeriodSelect) {
+                          onPeriodSelect(targetPeriod);
+                        } else if (onPeriodSelect) {
+                          onPeriodSelect("");
+                        }
+                      } else if (onPeriodSelect) {
+                        onPeriodSelect("");
+                      }
+                    }}
+                    className="appearance-none bg-slate-50 border border-slate-300 text-slate-800 py-2.5 pl-9 pr-8 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-extrabold cursor-pointer hover:bg-slate-100 transition-colors"
+                  >
+                    {availableYears.map((yr) => (
+                      <option key={yr} value={yr}>
+                        Year {yr}
                       </option>
-                      {periods
-                        .filter(p => (p.year || parseInt(p.id.split('-')[0])) === yr)
-                        .map((p: any) => (
-                          <option key={p.id} value={p.id}>
-                            📅 {p.label} Dataset
-                          </option>
-                        ))}
-                    </optgroup>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center px-3.5 text-cyan-600">
-                  <Calendar className="h-4.5 w-4.5" />
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center px-3 text-cyan-600">
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </div>
                 </div>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
-                  <ChevronDown className="h-4 w-4" />
+
+                {/* 13-Option Month Selector (Full Year Summary + 12 Months) */}
+                <div className="relative">
+                  <select
+                    value={activePeriodId || `yearly-${selectedYear}`}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.startsWith("yearly-")) {
+                        const yr = parseInt(val.replace("yearly-", ""), 10);
+                        if (onYearSelect) onYearSelect(yr);
+                        if (onPeriodSelect) onPeriodSelect("");
+                      } else {
+                        if (onPeriodSelect) onPeriodSelect(val);
+                      }
+                    }}
+                    className="appearance-none bg-slate-50 border border-slate-300 text-slate-800 py-2.5 pl-4 pr-9 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm font-bold cursor-pointer hover:bg-slate-100 transition-colors"
+                  >
+                    {monthOptions.map((opt) => (
+                      <option 
+                        key={opt.value} 
+                        value={opt.value} 
+                        disabled={!opt.isAvailable}
+                        className={opt.value.startsWith('yearly-') ? 'font-black text-cyan-700 bg-cyan-50/40' : opt.isAvailable ? 'font-semibold text-slate-800' : 'text-slate-400'}
+                      >
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </div>
                 </div>
               </div>
             )}
@@ -691,22 +783,57 @@ export function Dashboard({
                     onClick={() => setIsFilterDropdownOpen(false)}
                   />
                   {/* Dropdown Menu Container */}
-                  <div className="absolute left-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-150">
-                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Branch Filters</h5>
+                  <div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Branch Filter</h5>
+                      {activeFilterVersion && (
+                        <span className="text-[9px] bg-cyan-50 text-cyan-700 px-1.5 py-0.5 rounded font-bold border border-cyan-200">
+                          Active Version
+                        </span>
+                      )}
+                    </div>
                     
                     {branchCustomers.length > 0 ? (
-                      <label className="flex items-start gap-3 p-2.5 hover:bg-slate-50 rounded-xl cursor-pointer transition-colors select-none">
-                        <input
-                          type="checkbox"
-                          checked={limitToBranch}
-                          onChange={(e) => setLimitToBranch(e.target.checked)}
-                          className="mt-0.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
-                        />
-                        <div className="space-y-0.5">
-                          <span className="text-slate-800 text-xs font-bold block">Jawa Tengah Branch</span>
-                          <span className="text-[10px] text-slate-450 font-semibold block">{branchCustomers.length} registered SIDs/Customers</span>
-                        </div>
-                      </label>
+                      <div className="space-y-3">
+                        <label className="flex items-start gap-3 p-2.5 hover:bg-slate-50 rounded-xl cursor-pointer transition-colors select-none">
+                          <input
+                            type="checkbox"
+                            checked={limitToBranch}
+                            onChange={(e) => setLimitToBranch(e.target.checked)}
+                            className="mt-0.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
+                          />
+                          <div className="space-y-0.5">
+                            <span className="text-slate-800 text-xs font-bold block">
+                              {activeFilterVersion?.name || "Jawa Tengah Branch"}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium block">
+                              {branchCustomers.length.toLocaleString()} registered SIDs/Customers
+                            </span>
+                          </div>
+                        </label>
+
+                        {/* Version Switcher if multiple versions exist */}
+                        {filterVersions && filterVersions.length > 1 && (
+                          <div className="pt-2 border-t border-slate-100">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                              Switch Version
+                            </label>
+                            <select
+                              value={activeFilterVersion?.id || ""}
+                              onChange={(e) => {
+                                if (onActivateFilterVersion) onActivateFilterVersion(e.target.value);
+                              }}
+                              className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-slate-700 focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+                            >
+                              {filterVersions.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.name} ({v.itemCount || 0} SIDs)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="p-3 text-center bg-slate-50 border border-slate-150 border-dashed rounded-xl">
                         <span className="text-[11px] text-slate-450 font-bold block">No Branch List</span>
