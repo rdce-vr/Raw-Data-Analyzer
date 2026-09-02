@@ -6,7 +6,7 @@ import multer from "multer";
 import * as xlsx from "xlsx";
 import { createServer as createViteServer } from "vite";
 
-import { getDbPool, initializeDbSchema, seedDbIfEmpty } from "./backend/db";
+import { getDbPool, initializeDbSchema, seedDbIfEmpty, ensureYearPartition } from "./backend/db";
 import { saveCache, loadCache, loadCachePeriodData, saveCachePeriod, deleteCachePeriod, setParseExcelDate } from "./backend/cache";
 import { REQUIRED_COLUMNS, TICKETING_COLUMNS, renameAndNormalize, parseDurationToSeconds, parseExcelDate } from "./backend/excelParser";
 
@@ -118,13 +118,13 @@ app.get("/api/period-data", async (req, res) => {
       }
       const periodData = periodRes.rows[0];
 
-      // Fetch chunks and aggregate them.
+      // Fetch chunks using year partition key and period_id
       const chunksRes = await p.query(
         `SELECT chunk_index as "chunkIndex", rows 
          FROM period_chunks 
-         WHERE period_id = $1 
+         WHERE year = $1 AND period_id = $2 
          ORDER BY chunk_index ASC`,
-        [periodId]
+        [periodData.year, periodId]
       );
 
       const aggregatedRows: any[] = [];
@@ -202,12 +202,12 @@ app.get("/api/yearly-data", async (req, res) => {
 
     try {
       const p = getDbPool();
+      // Direct single-partition scan (partition pruning automatically routes to period_chunks_y<year>)
       const result = await p.query(
-        `SELECT pc.rows 
-         FROM period_chunks pc
-         JOIN periods per ON pc.period_id = per.id
-         WHERE per.year = $1
-         ORDER BY per.month ASC, pc.chunk_index ASC`,
+        `SELECT rows 
+         FROM period_chunks 
+         WHERE year = $1
+         ORDER BY chunk_index ASC`,
         [yearNum]
       );
 
@@ -563,8 +563,11 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
               ]
             );
 
+            // Provision year partition if not already existing
+            await ensureYearPartition(client, year);
+
             // Delete existing chunks for this period
-            await client.query("DELETE FROM period_chunks WHERE period_id = $1", [periodId]);
+            await client.query("DELETE FROM period_chunks WHERE year = $1 AND period_id = $2", [year, periodId]);
 
             // Chunk rows and insert
             const chunkSize = 150;
@@ -581,12 +584,12 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
             if (chunksToInsert.length > 0) {
               const placeholders = chunksToInsert.map((_, idx) => {
-                const base = idx * 3;
-                return `($${base + 1}, $${base + 2}, $${base + 3})`;
+                const base = idx * 4;
+                return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
               }).join(", ");
-              const values = chunksToInsert.flatMap(c => [c.periodId, c.chunkIdx, c.rowsJson]);
+              const values = chunksToInsert.flatMap(c => [c.periodId, year, c.chunkIdx, c.rowsJson]);
               await client.query(
-                `INSERT INTO period_chunks (period_id, chunk_index, rows)
+                `INSERT INTO period_chunks (period_id, year, chunk_index, rows)
                  VALUES ${placeholders}`,
                 values
               );

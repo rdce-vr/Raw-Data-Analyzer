@@ -18,6 +18,18 @@ export function getDbPool(): pg.Pool {
   return poolInstance;
 }
 
+export async function ensureYearPartition(client: pg.PoolClient | pg.Pool, year: number) {
+  try {
+    const tableName = `period_chunks_y${year}`;
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${tableName} PARTITION OF period_chunks
+      FOR VALUES FROM (${year}) TO (${year + 1});
+    `);
+  } catch (err) {
+    console.error(`Error ensuring partition for year ${year}:`, err);
+  }
+}
+
 export async function initializeDbSchema() {
   const p = getDbPool();
   try {
@@ -39,16 +51,75 @@ export async function initializeDbSchema() {
           stats JSONB NOT NULL
         )
       `);
-      
-      // Create period_chunks table
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS period_chunks (
-          period_id VARCHAR(50) NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
-          chunk_index INT NOT NULL,
-          rows JSONB NOT NULL,
-          PRIMARY KEY (period_id, chunk_index)
-        )
+
+      // Check if period_chunks exists and whether it is already partitioned
+      const tableInfo = await client.query(`
+        SELECT c.relkind 
+        FROM pg_class c 
+        JOIN pg_namespace n ON n.oid = c.relnamespace 
+        WHERE c.relname = 'period_chunks' AND n.nspname = 'public'
       `);
+
+      if (tableInfo.rowCount && tableInfo.rows[0].relkind === 'r') {
+        console.log("Migrating monolithic period_chunks to Native Partitioned Table...");
+        await client.query("BEGIN");
+        await client.query("ALTER TABLE period_chunks RENAME TO period_chunks_legacy");
+        
+        await client.query(`
+          CREATE TABLE period_chunks (
+            period_id VARCHAR(50) NOT NULL,
+            year INT NOT NULL,
+            chunk_index INT NOT NULL,
+            rows JSONB NOT NULL,
+            PRIMARY KEY (year, period_id, chunk_index)
+          ) PARTITION BY RANGE (year);
+        `);
+
+        // Pre-create standard year partitions
+        for (let yr = 2024; yr <= 2030; yr++) {
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS period_chunks_y${yr} PARTITION OF period_chunks
+            FOR VALUES FROM (${yr}) TO (${yr + 1});
+          `);
+        }
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS period_chunks_default PARTITION OF period_chunks DEFAULT;
+        `);
+
+        // Migrate records from legacy table
+        await client.query(`
+          INSERT INTO period_chunks (period_id, year, chunk_index, rows)
+          SELECT pcl.period_id, COALESCE(p.year, CAST(SPLIT_PART(pcl.period_id, '-', 1) AS INT)), pcl.chunk_index, pcl.rows
+          FROM period_chunks_legacy pcl
+          LEFT JOIN periods p ON pcl.period_id = p.id
+          ON CONFLICT (year, period_id, chunk_index) DO NOTHING;
+        `);
+
+        await client.query("DROP TABLE period_chunks_legacy CASCADE");
+        await client.query("COMMIT");
+        console.log("Successfully migrated period_chunks to Partitioned Table!");
+      } else if (tableInfo.rowCount === 0) {
+        // Fresh table creation as Partitioned Table
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS period_chunks (
+            period_id VARCHAR(50) NOT NULL,
+            year INT NOT NULL,
+            chunk_index INT NOT NULL,
+            rows JSONB NOT NULL,
+            PRIMARY KEY (year, period_id, chunk_index)
+          ) PARTITION BY RANGE (year);
+        `);
+
+        for (let yr = 2024; yr <= 2030; yr++) {
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS period_chunks_y${yr} PARTITION OF period_chunks
+            FOR VALUES FROM (${yr}) TO (${yr + 1});
+          `);
+        }
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS period_chunks_default PARTITION OF period_chunks DEFAULT;
+        `);
+      }
       
       // Create branch_customers table (legacy fallback)
       await client.query(`
@@ -82,8 +153,7 @@ export async function initializeDbSchema() {
       // Performance Indexes for fast multi-period queries and joins
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_periods_year_month ON periods(year, month);
-        CREATE INDEX IF NOT EXISTS idx_period_chunks_period_id ON period_chunks(period_id);
-        CREATE INDEX IF NOT EXISTS idx_period_chunks_period_chunk ON period_chunks(period_id, chunk_index);
+        CREATE INDEX IF NOT EXISTS idx_period_chunks_period_year ON period_chunks(year, period_id);
         CREATE INDEX IF NOT EXISTS idx_branch_filter_items_version ON branch_filter_items(version_id);
       `);
 
@@ -184,16 +254,18 @@ export async function seedDbIfEmpty() {
             });
           }
 
+          await ensureYearPartition(client, year);
+
           if (chunksToInsert.length > 0) {
             const placeholders = chunksToInsert.map((_, idx) => {
-              const base = idx * 3;
-              return `($${base + 1}, $${base + 2}, $${base + 3})`;
+              const base = idx * 4;
+              return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
             }).join(", ");
-            const values = chunksToInsert.flatMap(c => [c.periodId, c.chunkIdx, c.rowsJson]);
+            const values = chunksToInsert.flatMap(c => [c.periodId, year, c.chunkIdx, c.rowsJson]);
             await client.query(
-              `INSERT INTO period_chunks (period_id, chunk_index, rows) 
+              `INSERT INTO period_chunks (period_id, year, chunk_index, rows) 
                VALUES ${placeholders} 
-               ON CONFLICT (period_id, chunk_index) DO NOTHING`,
+               ON CONFLICT (year, period_id, chunk_index) DO NOTHING`,
               values
             );
           }
