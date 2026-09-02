@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
@@ -42,10 +43,15 @@ function trimRowsForDashboard(rows: any[]) {
   });
 }
 
+// In-Memory Fast Cache for period/yearly aggregations to bypass DB/disk on repeated queries
+export const inMemoryResponseCache = new Map<string, { payload: any; cachedAt: number }>();
+
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const CACHE_FILE = path.join(process.cwd(), "server_cache_v2.json");
 
+// Enable Gzip/Brotli HTTP compression for 70-85% smaller JSON payloads
+app.use(compression());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -82,6 +88,11 @@ app.get("/api/period-data", async (req, res) => {
     if (!periodId || typeof periodId !== "string") {
       return res.status(400).json({ detail: "periodId parameter is required" });
     }
+
+    // Fast-path in-memory cache to return instant 0ms responses on repeated period view
+    if (inMemoryResponseCache.has(periodId)) {
+      return res.json(inMemoryResponseCache.get(periodId)!.payload);
+    }
     
     try {
       const p = getDbPool();
@@ -116,7 +127,7 @@ app.get("/api/period-data", async (req, res) => {
         }
       }
 
-      return res.json({
+      const payload = {
         fileType: periodData.fileType || "ticketing",
         fileName: periodData.fileName || "Imported Database",
         columns: aggregatedRows.length > 0 ? Object.keys(aggregatedRows[0]) : [],
@@ -124,7 +135,10 @@ app.get("/api/period-data", async (req, res) => {
         originalData: periodData.fileType === "ticketing" ? trimRowsForDashboard(aggregatedRows) : aggregatedRows,
         stats: periodData.stats,
         periodId
-      });
+      };
+
+      inMemoryResponseCache.set(periodId, { payload, cachedAt: Date.now() });
+      return res.json(payload);
     } catch (dbErr) {
       console.log("Database lookup failed, falling back to local JSON cache for period data:", dbErr);
       const cache = loadCache();
@@ -133,7 +147,7 @@ app.get("/api/period-data", async (req, res) => {
       }
       const periodMetadata = cache.periods[periodId];
       const rows = loadCachePeriodData(periodId);
-      return res.json({
+      const payload = {
         fileType: "ticketing",
         fileName: "Imported Cache",
         columns: rows.length > 0 ? Object.keys(rows[0]) : [],
@@ -141,7 +155,9 @@ app.get("/api/period-data", async (req, res) => {
         originalData: trimRowsForDashboard(rows),
         stats: periodMetadata.stats,
         periodId
-      });
+      };
+      inMemoryResponseCache.set(periodId, { payload, cachedAt: Date.now() });
+      return res.json(payload);
     }
   } catch (err: any) {
     console.error("Error fetching period data:", err);
@@ -157,6 +173,12 @@ app.get("/api/yearly-data", async (req, res) => {
       return res.status(400).json({ detail: "year parameter is required" });
     }
     const yearNum = parseInt(String(year), 10);
+    const cacheKey = `yearly-${yearNum}`;
+
+    // Fast-path in-memory cache for yearly summary
+    if (inMemoryResponseCache.has(cacheKey)) {
+      return res.json(inMemoryResponseCache.get(cacheKey)!.payload);
+    }
 
     try {
       const p = getDbPool();
@@ -176,15 +198,18 @@ app.get("/api/yearly-data", async (req, res) => {
         }
       }
 
-      return res.json({
+      const payload = {
         fileType: "ticketing",
         fileName: `Yearly Dashboard Summary - ${yearNum}`,
         columns: allRows.length > 0 ? Object.keys(allRows[0]) : [],
         totalRows: allRows.length,
         originalData: trimRowsForDashboard(allRows),
         stats: null,
-        periodId: `yearly-${yearNum}`
-      });
+        periodId: cacheKey
+      };
+
+      inMemoryResponseCache.set(cacheKey, { payload, cachedAt: Date.now() });
+      return res.json(payload);
     } catch (dbErr) {
       console.log("Database lookup failed, falling back to local JSON cache for yearly data:", dbErr);
       const cache = loadCache();
@@ -197,15 +222,17 @@ app.get("/api/yearly-data", async (req, res) => {
           }
         }
       }
-      return res.json({
+      const payload = {
         fileType: "ticketing",
         fileName: `Yearly Dashboard Summary - ${yearNum}`,
         columns: allRows.length > 0 ? Object.keys(allRows[0]) : [],
         totalRows: allRows.length,
         originalData: trimRowsForDashboard(allRows),
         stats: null,
-        periodId: `yearly-${yearNum}`
-      });
+        periodId: cacheKey
+      };
+      inMemoryResponseCache.set(cacheKey, { payload, cachedAt: Date.now() });
+      return res.json(payload);
     }
   } catch (err: any) {
     console.error("Error fetching yearly data:", err);
@@ -221,6 +248,9 @@ app.delete("/api/period", async (req, res) => {
       return res.status(400).json({ detail: "periodId parameter is required" });
     }
     const p = getDbPool();
+
+    // Invalidate in-memory caches
+    inMemoryResponseCache.clear();
 
     // ON DELETE CASCADE automatically deletes associated chunks!
     await p.query("DELETE FROM periods WHERE id = $1", [periodId]);
@@ -242,6 +272,9 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
       return res.status(400).json({ detail: "No file uploaded" });
     }
     
+    // Invalidate in-memory caches upon new upload
+    inMemoryResponseCache.clear();
+
     const type = req.body.type || "standard";
     const workbook = xlsx.read(req.file.buffer, {
       type: "buffer",

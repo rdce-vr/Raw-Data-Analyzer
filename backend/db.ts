@@ -57,6 +57,13 @@ export async function initializeDbSchema() {
           uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      // Performance Indexes for fast multi-period queries and joins
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_periods_year_month ON periods(year, month);
+        CREATE INDEX IF NOT EXISTS idx_period_chunks_period_id ON period_chunks(period_id);
+        CREATE INDEX IF NOT EXISTS idx_period_chunks_period_chunk ON period_chunks(period_id, chunk_index);
+      `);
       
       console.log("Database schema initialized successfully.");
     } finally {
