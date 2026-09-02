@@ -40,14 +40,14 @@ export function HierarchicalLogs({
             Grouped by ID Pelanggan &rarr; Service ID (SID) &rarr; Individual Tickets
           </p>
         </div>
-        <div className="relative max-w-sm w-full">
-          <Search className="w-4.5 h-4.5 text-slate-400 absolute left-3 top-3" />
+        <div className="relative max-w-sm w-full flex items-center">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
           <input
             type="text"
             placeholder="Search by Customer ID, Name, SID, or Ticket ID..."
             value={custSearchQuery}
             onChange={(e) => setCustSearchQuery(e.target.value)}
-            className="w-full bg-white border border-slate-300 text-slate-700 py-2 pl-10 pr-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-xs font-semibold placeholder-slate-400 shadow-sm"
+            className="w-full bg-white border border-slate-300 text-slate-700 py-2.5 pl-10 pr-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-xs font-semibold placeholder-slate-400 shadow-sm"
           />
         </div>
       </div>

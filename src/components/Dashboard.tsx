@@ -142,16 +142,15 @@ export function Dashboard({
   const monthOptions = useMemo(() => {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     
-    // Count total yearly records
+    // Check if year has any periods
     const yearPeriods = periods.filter(p => (p.year || parseInt(p.id.split('-')[0])) === selectedYear);
-    const totalYearRows = yearPeriods.reduce((acc, p) => acc + (p.totalRows || 0), 0);
 
     const options = [
       {
         value: `yearly-${selectedYear}`,
-        label: `⭐ Full Year Summary (${(totalYearRows / 1000).toFixed(1)}k rows)`,
+        label: `⭐ Full Year Summary`,
         isAvailable: yearPeriods.length > 0,
-        count: totalYearRows
+        count: 0
       }
     ];
 
@@ -164,7 +163,7 @@ export function Dashboard({
       
       options.push({
         value: periodKey,
-        label: `${monthPad} - ${monthNames[m - 1]} ${isAvailable ? `(${count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count} rows)` : '(No Data)'}`,
+        label: `${monthPad} - ${monthNames[m - 1]}${isAvailable ? '' : ' (No Data)'}`,
         isAvailable,
         count
       });
@@ -692,7 +691,7 @@ export function Dashboard({
                   >
                     {availableYears.map((yr) => (
                       <option key={yr} value={yr}>
-                        Year {yr}
+                        {yr}
                       </option>
                     ))}
                   </select>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { Dashboard } from './components/Dashboard';
-import { RefreshCw, FileSpreadsheet, Github, Calendar, Trash2, Database, FolderOpen, ArrowRight, Loader2, Upload } from 'lucide-react';
+import { RefreshCw, FileSpreadsheet, Github, Calendar, Trash2, Database, FolderOpen, ArrowRight, Loader2, Upload, Pencil, Check, X } from 'lucide-react';
 
 export default function App() {
   const [data, setData] = useState<any>(null);
@@ -18,6 +18,8 @@ export default function App() {
   const [limitToBranch, setLimitToBranch] = useState<boolean>(true);
   const [isUploadingBranch, setIsUploadingBranch] = useState<boolean>(false);
   const [newVersionName, setNewVersionName] = useState<string>('');
+  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
+  const [editingVersionName, setEditingVersionName] = useState<string>('');
 
   // Fetch branch customer list & versions
   const fetchFilterVersions = async () => {
@@ -79,6 +81,28 @@ export default function App() {
     } finally {
       setIsUploadingBranch(false);
       e.target.value = '';
+    }
+  };
+
+  const handleRenameFilterVersion = async (versionId: string) => {
+    if (!editingVersionName.trim()) return;
+    try {
+      const res = await fetch(`/api/branch-filter-versions/${versionId}/rename`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editingVersionName.trim() })
+      });
+      if (res.ok) {
+        setEditingVersionId(null);
+        setEditingVersionName('');
+        await fetchFilterVersions();
+        await fetchBranchCustomers();
+      } else {
+        const err = await res.json();
+        alert('Failed to rename version: ' + (err.detail || 'Unknown error'));
+      }
+    } catch (err: any) {
+      console.error('Error renaming filter version:', err);
     }
   };
 
@@ -306,60 +330,40 @@ export default function App() {
         ) : (
           // Data is Available in the Database (Show Yearly/Monthly Dashboard)
           <div className="px-6 py-8">
-            {/* Header Toolbar containing Toggle Form button and Year pills */}
-            <div className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 p-6 border border-slate-200/80 rounded-2xl shadow-md shadow-slate-100/50 glass-card">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-cyan-600">
-                  <Database className="w-5 h-5 animate-pulse" />
-                  <span className="font-extrabold text-sm tracking-wide uppercase">Active Dataset</span>
+            {/* Minimal Header / Dataset Management Bar */}
+            <div className="max-w-7xl mx-auto mb-6 flex items-center justify-between gap-4 p-4 bg-white border border-slate-200/80 rounded-2xl shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cyan-50 text-cyan-600 rounded-xl border border-cyan-100">
+                  <Database className="w-4 h-4" />
                 </div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  {activePeriodId 
-                    ? `Viewing Monthly Dataset: ${periods.find(p => p.id === activePeriodId)?.label || activePeriodId}`
-                    : `Viewing Combined Yearly Summary: ${selectedYear}`
-                  }
-                </h2>
-                <p className="text-xs text-slate-400 font-semibold">
-                  {activePeriodId 
-                    ? "Filtered to a single calendar month dataset" 
-                    : `Aggregated data from all ${periods.filter(p => (p.year || parseInt(p.id.split('-')[0])) === selectedYear).length} months of the year ${selectedYear}`
-                  }
-                </p>
+                <div>
+                  <span className="text-xs font-extrabold text-slate-800 block">
+                    {activePeriodId 
+                      ? `Viewing: ${periods.find(p => p.id === activePeriodId)?.label || activePeriodId}`
+                      : `Viewing: ${selectedYear} Full Year Summary`
+                    }
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-semibold block">
+                    {activePeriodId 
+                      ? "Monthly breakdown active" 
+                      : `Aggregated across all ${periods.filter(p => (p.year || parseInt(p.id.split('-')[0])) === selectedYear).length} uploaded months`
+                    }
+                  </span>
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                {/* Year Select Tabs (Pills) */}
-                {!activePeriodId && (
-                  <div className="bg-slate-100 p-1 rounded-xl flex gap-1 border border-slate-200 shadow-inner">
-                    {availableYears.map((yr: any) => (
-                      <button
-                        key={yr}
-                        onClick={() => setSelectedYear(yr)}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
-                          selectedYear === yr
-                            ? 'bg-white text-cyan-600 shadow-sm ring-1 ring-black/5'
-                            : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                      >
-                        {yr}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Manage & Upload Toggle Button */}
-                <button
-                  onClick={() => setShowUploadForm(!showUploadForm)}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 shadow-sm active:scale-95 cursor-pointer border ${
-                    showUploadForm
-                      ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-900'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${showUploadForm ? 'rotate-180 transition-transform duration-300' : ''}`} />
-                  <span>{showUploadForm ? "Hide Dataset Manager" : "Upload & Manage Datasets"}</span>
-                </button>
-              </div>
+              {/* Upload & Manage Toggle Button */}
+              <button
+                onClick={() => setShowUploadForm(!showUploadForm)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shadow-sm active:scale-95 cursor-pointer border ${
+                  showUploadForm
+                    ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-900'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                <span>{showUploadForm ? "Hide Manager" : "Upload & Manage"}</span>
+              </button>
             </div>
 
             {/* Collapsible Upload Form & Dataset Manager */}
@@ -406,22 +410,67 @@ export default function App() {
                                 : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
                             }`}
                           >
-                            <div className="min-w-0 pr-2">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-slate-800 text-xs truncate block">{v.name}</span>
-                                {v.isActive && (
-                                  <span className="text-[9px] bg-cyan-600 text-white font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider">
-                                    Active
+                            <div className="min-w-0 pr-2 flex-1">
+                              {editingVersionId === v.id ? (
+                                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="text"
+                                    value={editingVersionName}
+                                    onChange={(e) => setEditingVersionName(e.target.value)}
+                                    className="px-2 py-0.5 text-xs font-bold bg-white border border-cyan-400 rounded-lg focus:outline-none w-full text-slate-800"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleRenameFilterVersion(v.id);
+                                      if (e.key === 'Escape') setEditingVersionId(null);
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => handleRenameFilterVersion(v.id)}
+                                    className="p-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md cursor-pointer"
+                                    title="Save name"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingVersionId(null)}
+                                    className="p-1 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded-md cursor-pointer"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-slate-800 text-xs truncate block">{v.name}</span>
+                                    {v.isActive && (
+                                      <span className="text-[9px] bg-cyan-600 text-white font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider">
+                                        Active
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                                    {v.itemCount?.toLocaleString("id-ID") || 0} SIDs • {new Date(v.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                                   </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
-                                {v.itemCount?.toLocaleString("id-ID") || 0} SIDs • {new Date(v.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                              </span>
+                                </>
+                              )}
                             </div>
 
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              {!v.isActive && (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {editingVersionId !== v.id && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingVersionId(v.id);
+                                    setEditingVersionName(v.name);
+                                  }}
+                                  className="p-1.5 bg-white hover:bg-slate-100 text-slate-400 hover:text-slate-700 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                                  title="Rename filter list"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                              {!v.isActive && editingVersionId !== v.id && (
                                 <button
                                   onClick={() => handleActivateFilterVersion(v.id)}
                                   className="px-2 py-1 bg-white hover:bg-cyan-50 text-cyan-700 border border-slate-200 hover:border-cyan-300 font-bold text-[10px] rounded-lg transition-all cursor-pointer"
@@ -430,13 +479,15 @@ export default function App() {
                                   Activate
                                 </button>
                               )}
-                              <button
-                                onClick={(e) => handleDeleteFilterVersion(v.id, e)}
-                                className="p-1.5 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-lg transition-colors cursor-pointer"
-                                title="Delete filter version"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {editingVersionId !== v.id && (
+                                <button
+                                  onClick={(e) => handleDeleteFilterVersion(v.id, e)}
+                                  className="p-1.5 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-lg transition-colors cursor-pointer"
+                                  title="Delete filter version"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))

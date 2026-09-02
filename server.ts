@@ -1063,6 +1063,29 @@ app.put("/api/branch-filter-versions/:id/activate", async (req, res) => {
   }
 });
 
+// Rename a branch customer filter version
+app.put("/api/branch-filter-versions/:id/rename", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ detail: "A valid filter version name is required" });
+    }
+    const p = getDbPool();
+    const result = await p.query(
+      "UPDATE branch_filter_versions SET name = $1 WHERE id = $2 RETURNING id, name, item_count as \"itemCount\", is_active as \"isActive\"",
+      [name.trim(), id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ detail: "Version not found" });
+    }
+    return res.json({ success: true, version: result.rows[0] });
+  } catch (err: any) {
+    console.error("Error renaming filter version:", err);
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
 // Delete a specific branch filter version
 app.delete("/api/branch-filter-versions/:id", async (req, res) => {
   try {

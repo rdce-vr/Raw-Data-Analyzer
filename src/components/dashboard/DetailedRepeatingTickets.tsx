@@ -36,14 +36,14 @@ export function DetailedRepeatingTickets({
             Showing {filteredRepSIDGroups.length} unique Service IDs with repeating tickets
           </p>
         </div>
-        <div className="relative max-w-xs w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+        <div className="relative max-w-xs w-full flex items-center">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
           <input
             type="text"
             placeholder="Search repeating tickets..."
             value={repSearchQuery}
             onChange={(e) => { setRepSearchQuery(e.target.value); setRepPage(1); }}
-            className="w-full bg-white border border-slate-350 text-slate-700 py-1.5 pl-9 pr-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-xs font-semibold placeholder-slate-400 shadow-sm"
+            className="w-full bg-white border border-slate-300 text-slate-700 py-2 pl-9 pr-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-xs font-semibold placeholder-slate-400 shadow-sm"
           />
         </div>
       </div>
