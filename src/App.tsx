@@ -20,6 +20,7 @@ export default function App() {
   const [newVersionName, setNewVersionName] = useState<string>('');
   const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
   const [editingVersionName, setEditingVersionName] = useState<string>('');
+  const clientDataCacheRef = React.useRef<Map<string, any>>(new Map());
 
   // Fetch branch customer list & versions
   const fetchFilterVersions = async () => {
@@ -172,16 +173,23 @@ export default function App() {
   }, [periods]);
 
   const loadYearlyData = async (year: number) => {
+    const cacheKey = `yearly-${year}`;
+    if (clientDataCacheRef.current.has(cacheKey)) {
+      setYearlyData(clientDataCacheRef.current.get(cacheKey));
+      return;
+    }
     setIsLoadingYearly(true);
     try {
       const response = await fetch(`/api/yearly-data?year=${year}`);
       if (response.ok) {
         const result = await response.json();
-        setYearlyData({
+        const formatted = {
           ...result,
           isYearly: true,
           year
-        });
+        };
+        clientDataCacheRef.current.set(cacheKey, formatted);
+        setYearlyData(formatted);
       } else {
         setYearlyData(null);
       }
@@ -200,6 +208,7 @@ export default function App() {
   }, [selectedYear, periods]);
 
   const handleUploadSuccess = (payload: any) => {
+    clientDataCacheRef.current.clear();
     setData(payload);
     fetchPeriods();
     if (payload.periodId) {
@@ -213,11 +222,17 @@ export default function App() {
   };
 
   const loadPeriodData = async (periodId: string) => {
+    if (clientDataCacheRef.current.has(periodId)) {
+      setData(clientDataCacheRef.current.get(periodId));
+      setActivePeriodId(periodId);
+      return;
+    }
     setIsLoadingPeriod(true);
     try {
       const response = await fetch(`/api/period-data?periodId=${periodId}`);
       if (response.ok) {
         const result = await response.json();
+        clientDataCacheRef.current.set(periodId, result);
         setData(result);
         setActivePeriodId(periodId);
       } else {
@@ -252,6 +267,10 @@ export default function App() {
     try {
       const response = await fetch(`/api/period?periodId=${periodId}`, { method: 'DELETE' });
       if (response.ok) {
+        clientDataCacheRef.current.delete(periodId);
+        for (const key of Array.from(clientDataCacheRef.current.keys())) {
+          if (key.startsWith("yearly-")) clientDataCacheRef.current.delete(key);
+        }
         if (activePeriodId === periodId) {
           setData(null);
           setActivePeriodId(null);
@@ -543,7 +562,7 @@ export default function App() {
             )}
 
             {/* Dashboard Display */}
-            {isLoadingPeriod || isLoadingYearly ? (
+            {(!data && !yearlyData) && (isLoadingPeriod || isLoadingYearly) ? (
               <div className="flex flex-col items-center justify-center py-24 space-y-4 max-w-7xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm">
                 <Loader2 className="w-12 h-12 text-cyan-600 animate-spin" />
                 <p className="text-slate-600 font-bold">Assembling and aggregating data...</p>
@@ -562,6 +581,7 @@ export default function App() {
                 onActivateFilterVersion={handleActivateFilterVersion}
                 limitToBranch={limitToBranch}
                 setLimitToBranch={setLimitToBranch}
+                isLoading={isLoadingPeriod || isLoadingYearly}
               />
             )}
           </div>

@@ -38,7 +38,8 @@ import {
   Minus,
   Upload,
   Trash2,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
 
 import { COLORS, PIE_COLORS, getFriendlyLabel, formatMinutes, formatDateVal } from './dashboard/DashboardUtils';
@@ -60,6 +61,7 @@ interface DashboardProps {
   onActivateFilterVersion?: (versionId: string) => void;
   limitToBranch: boolean;
   setLimitToBranch: (val: boolean) => void;
+  isLoading?: boolean;
 }
 
 export function Dashboard({ 
@@ -73,7 +75,8 @@ export function Dashboard({
   activeFilterVersion = null,
   onActivateFilterVersion,
   limitToBranch = false,
-  setLimitToBranch
+  setLimitToBranch,
+  isLoading = false
 }: DashboardProps) {
   if (!data) return null;
 
@@ -650,13 +653,18 @@ export function Dashboard({
         {/* Title Section */}
         <div className="p-1">
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">{fileName}</h2>
-          <div className="flex items-center gap-2 mt-2 text-slate-500 text-sm font-semibold">
+          <div className="flex flex-wrap items-center gap-2 mt-2 text-slate-500 text-sm font-semibold">
             <Layers className="w-4.5 h-4.5 text-cyan-500" />
             <span>Ticketing Metrics & SLA Dashboard</span>
             <span className="w-1.5 h-1.5 bg-slate-300 rounded-full mx-1"></span>
             <span className="text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs font-bold border border-emerald-100 shadow-sm">
               <Activity className="w-3.5 h-3.5" /> {filteredData.length} Tickets Found
             </span>
+            {isLoading && (
+              <span className="text-cyan-700 flex items-center gap-1.5 bg-cyan-50 px-2.5 py-0.5 rounded-full text-xs font-bold border border-cyan-200 animate-pulse shadow-sm">
+                <Loader2 className="w-3 h-3 animate-spin" /> Updating dataset...
+              </span>
+            )}
           </div>
         </div>
 
