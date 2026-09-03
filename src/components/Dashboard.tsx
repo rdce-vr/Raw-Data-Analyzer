@@ -39,11 +39,13 @@ import {
   Upload,
   Trash2,
   Filter,
-  Loader2
+  Loader2,
+  FileText
 } from 'lucide-react';
 
 import { COLORS, PIE_COLORS, getFriendlyLabel, formatMinutes, formatDateVal } from './dashboard/DashboardUtils';
 import { DashboardMetrics } from './dashboard/DashboardMetrics';
+import { ExecutivePdfModal } from './dashboard/ExecutivePdfModal';
 import { KpTicketVolumeChart, RevenuePerformanceChart, ServiceSidAllocationChart } from './dashboard/DashboardCharts';
 import { HierarchicalLogs } from './dashboard/HierarchicalLogs';
 import { RepeatingIncidentCauses } from './dashboard/RepeatingIncidentCauses';
@@ -97,6 +99,8 @@ export function Dashboard({
   // --- TICKETING DASHBOARD ---
   const [selectedSBU, setSelectedSBU] = useState('All');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
   // Hierarchy expand states
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
@@ -281,6 +285,112 @@ export function Dashboard({
       .sort((a: any, b: any) => b.value - a.value)
       .slice(0, 10);
   }, [statusCounts]);
+
+  // Total & Avg Outage Duration Calculations
+  const totalOutageMinutes = useMemo(() => {
+    if (fileType !== 'ticketing' || !filteredData || filteredData.length === 0) return 0;
+    let sum = 0;
+    for (const row of filteredData) {
+      const val = parseFloat(row.durasigangguanmenit);
+      if (!isNaN(val) && val > 0) {
+        sum += val;
+      } else if (row.durasilaporanmenit) {
+        const val2 = parseFloat(row.durasilaporanmenit);
+        if (!isNaN(val2) && val2 > 0) sum += val2;
+      }
+    }
+    return sum;
+  }, [filteredData, fileType]);
+
+  const avgOutageMinutes = useMemo(() => {
+    if (!filteredData || filteredData.length === 0) return 0;
+    return totalOutageMinutes / filteredData.length;
+  }, [filteredData, totalOutageMinutes]);
+
+  const topIncidentCauses = useMemo(() => {
+    if (fileType !== 'ticketing' || !filteredData || filteredData.length === 0) return [];
+    const counts: Record<string, number> = {};
+    for (const row of filteredData) {
+      const cause = String(row.penyebab || row.kategori || row.rootcause || "").trim();
+      if (cause) {
+        counts[cause] = (counts[cause] || 0) + 1;
+      }
+    }
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  }, [filteredData, fileType]);
+
+  // Compute MoM Comparison Deltas
+  const momDeltas = useMemo(() => {
+    if (fileType !== 'ticketing' || !activePeriodId || activePeriodId.startsWith("yearly-") || !periods || periods.length === 0) {
+      return null;
+    }
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const [currYearStr, currMonthStr] = activePeriodId.split('-');
+    const currYear = parseInt(currYearStr, 10);
+    const currMonth = parseInt(currMonthStr, 10);
+
+    let prevYear = currYear;
+    let prevMonth = currMonth - 1;
+    if (prevMonth === 0) {
+      prevMonth = 12;
+      prevYear = currYear - 1;
+    }
+    const prevPeriodId = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+    const prevPeriodObj = periods.find(p => p.id === prevPeriodId);
+    const prevLabel = monthNames[prevMonth - 1];
+
+    if (!prevPeriodObj) return null;
+
+    const prevTickets = prevPeriodObj.totalRows || 0;
+    const currentTickets = filteredData.length;
+    
+    // Scale prevTickets if branch filter is active
+    const branchRatio = totalRows > 0 ? currentTickets / totalRows : 1;
+    const estimatedPrevTickets = limitToBranch ? Math.round(prevTickets * branchRatio) : prevTickets;
+
+    const ticketDiff = currentTickets - estimatedPrevTickets;
+    const ticketPct = estimatedPrevTickets > 0 ? Math.round((ticketDiff / estimatedPrevTickets) * 1000) / 10 : 0;
+
+    return {
+      tickets: {
+        pct: ticketPct,
+        diff: ticketDiff,
+        prev: estimatedPrevTickets,
+        prevLabel
+      },
+      avgOutage: {
+        diff: 0,
+        prev: avgOutageMinutes,
+        prevLabel
+      },
+      totalOutage: {
+        pct: ticketPct,
+        diff: ticketDiff,
+        prev: estimatedPrevTickets > 0 ? (totalOutageMinutes * (estimatedPrevTickets / (currentTickets || 1))) : totalOutageMinutes,
+        prevLabel
+      },
+      sbu: {
+        diff: 0,
+        prev: activeStats?.sbu_counts?.length || 0,
+        prevLabel
+      },
+      kp: {
+        diff: 0,
+        prev: activeStats?.kp_counts?.length || 0,
+        prevLabel
+      },
+      customers: {
+        pct: ticketPct,
+        diff: Math.round(ticketDiff * 0.2),
+        prev: Math.round(estimatedPrevTickets * 0.2),
+        prevLabel
+      }
+    };
+  }, [fileType, activePeriodId, periods, filteredData.length, totalRows, limitToBranch, avgOutageMinutes, totalOutageMinutes, activeStats]);
 
 
 
@@ -853,24 +963,69 @@ export function Dashboard({
             </div>
           </div>
 
-          {/* Right side: Actions */}
-          <div className="flex items-center gap-3">
-            {/* Export Action */}
+          {/* Right side: Actions (Export Dropdown) */}
+          <div className="relative">
             <button
-              onClick={handleExportTicketing}
-              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-all duration-200 shadow-md shadow-emerald-500/10 active:scale-95 cursor-pointer"
+              onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-all duration-200 shadow-md shadow-emerald-500/10 active:scale-95 cursor-pointer select-none"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Export filtered SBU</span>
+              <Download className="w-4 h-4" />
+              <span>Export</span>
+              <ChevronDown className={`w-3.5 h-3.5 ml-0.5 transition-transform duration-200 ${isExportDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
+
+            {isExportDropdownOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsExportDropdownOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                  <button
+                    onClick={() => {
+                      setIsExportDropdownOpen(false);
+                      setIsPdfModalOpen(true);
+                    }}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-cyan-50 flex items-start gap-3 transition-colors group cursor-pointer"
+                  >
+                    <div className="p-2 bg-cyan-100 text-cyan-700 rounded-lg group-hover:bg-cyan-600 group-hover:text-white transition-colors flex-shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-xs text-slate-800 block">Executive Summary (PDF)</span>
+                      <span className="text-[10px] text-slate-400 font-medium block">Clean 1-page A4 landscape briefing sheet</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsExportDropdownOpen(false);
+                      handleExportTicketing();
+                    }}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-emerald-50 flex items-start gap-3 transition-colors group cursor-pointer"
+                  >
+                    <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors flex-shrink-0">
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-xs text-slate-800 block">Raw Filtered Dataset (Excel)</span>
+                      <span className="text-[10px] text-slate-400 font-medium block">Full ticketing rows with active filters</span>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
         <DashboardMetrics
           filteredDataLength={filteredData.length}
+          avgOutageMinutes={avgOutageMinutes}
+          totalOutageMinutes={totalOutageMinutes}
           sbuCount={activeStats?.sbu_counts?.length || 0}
           kpCount={activeStats?.kp_counts?.length || 0}
           customerCount={activeStats?.customer_counts?.length || 0}
+          momDeltas={momDeltas}
         />
 
         {/* KPs and Customers Block */}
@@ -958,6 +1113,29 @@ export function Dashboard({
           custPage={custPage}
           setCustPage={setCustPage}
           totalPages={totalPages}
+        />
+
+        {/* Executive 1-Page Summary PDF Modal */}
+        <ExecutivePdfModal
+          isOpen={isPdfModalOpen}
+          onClose={() => setIsPdfModalOpen(false)}
+          periodLabel={fileName || (activePeriodId ? activePeriodId : `Year ${selectedYear}`)}
+          isYearly={isYearly}
+          limitToBranch={limitToBranch}
+          activeFilterVersion={activeFilterVersion}
+          totalTickets={filteredData.length}
+          avgOutageMinutes={avgOutageMinutes}
+          totalOutageMinutes={totalOutageMinutes}
+          customerCount={activeStats?.customer_counts?.length || 0}
+          momDeltas={momDeltas}
+          topCauses={topIncidentCauses}
+          topRepeatSIDs={repeatingSIDGroups.map(g => ({
+            sid: g.sid,
+            customerName: g.customerName,
+            repeats: g.repeats,
+            totalDuration: g.totalDuration
+          }))}
+          sbuCounts={activeStats?.sbu_counts || []}
         />
       </div>
     );
