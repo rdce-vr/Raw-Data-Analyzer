@@ -766,37 +766,115 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 });
 
 // Export Endpoint
-app.get("/api/export", (req, res) => {
+app.get("/api/export", async (req, res) => {
   try {
     const reportType = (req.query.report_type || "all") as string;
     const sbuFilter = (req.query.sbu_filter || "All") as string;
-    
-    const cache = loadCache();
-    if (!cache) {
-      return res.status(404).json({ detail: "No processed data found in cache. Please upload a file first." });
-    }
+    const periodId = req.query.periodId as string | undefined;
+    const yearParam = req.query.year as string | undefined;
+    const limitToBranch = req.query.limit_to_branch === "true";
+    const filterVersionId = req.query.filter_version_id as string | undefined;
 
     const wb = xlsx.utils.book_new();
 
     if (reportType === "ticketing") {
-      if (cache.type !== "ticketing") {
-        return res.status(400).json({ detail: "Cached data is not of ticketing type. Please upload a ticketing file first." });
+      let allRows: any[] = [];
+
+      try {
+        const p = getDbPool();
+        if (periodId && !periodId.startsWith("yearly-")) {
+          const yr = parseInt(periodId.split("-")[0], 10);
+          const result = await p.query(
+            `SELECT rows FROM period_chunks 
+             WHERE year = $1 AND period_id = $2 
+             ORDER BY chunk_index ASC`,
+            [yr, periodId]
+          );
+          for (const r of result.rows) {
+            if (Array.isArray(r.rows)) allRows.push(...r.rows);
+          }
+        } else {
+          // Yearly or all
+          const yr = periodId?.startsWith("yearly-") 
+            ? parseInt(periodId.replace("yearly-", ""), 10) 
+            : (yearParam ? parseInt(yearParam, 10) : new Date().getFullYear());
+          
+          const result = await p.query(
+            `SELECT rows FROM period_chunks 
+             WHERE year = $1 
+             ORDER BY chunk_index ASC`,
+            [yr]
+          );
+          for (const r of result.rows) {
+            if (Array.isArray(r.rows)) allRows.push(...r.rows);
+          }
+        }
+      } catch (dbErr) {
+        console.warn("PostgreSQL export query fallback to local cache:", dbErr);
       }
-      let rows = cache.data || [];
+
+      // Fallback if DB yielded no rows
+      if (allRows.length === 0) {
+        const cache = loadCache();
+        if (periodId && cache?.periods?.[periodId]) {
+          allRows = loadCachePeriodData(periodId);
+        } else if (cache?.data) {
+          allRows = cache.data;
+        }
+      }
+
+      if (allRows.length === 0) {
+        return res.status(404).json({ detail: "No ticketing data found for the requested period." });
+      }
+
+      // 1. SBU Terminating Filter
       if (sbuFilter && sbuFilter !== "All") {
-        rows = rows.filter((row: any) => row.namasbu === sbuFilter);
+        allRows = allRows.filter((row: any) => row.sbuter === sbuFilter || row.namasbu === sbuFilter);
       }
-      const ws = xlsx.utils.json_to_sheet(rows);
+
+      // 2. Branch Customer Filter
+      if (limitToBranch) {
+        try {
+          const p = getDbPool();
+          let query = `SELECT item_value FROM branch_filter_items WHERE version_id = (SELECT id FROM branch_filter_versions WHERE is_active = true LIMIT 1)`;
+          const params: any[] = [];
+          if (filterVersionId) {
+            query = `SELECT item_value FROM branch_filter_items WHERE version_id = $1`;
+            params.push(filterVersionId);
+          }
+          const filterRes = await p.query(query, params);
+          if (filterRes.rows.length > 0) {
+            const branchSet = new Set(filterRes.rows.map(r => String(r.item_value).toLowerCase().trim()));
+            allRows = allRows.filter((row: any) => {
+              const idPel = String(row.idpelanggan || "").toLowerCase().trim();
+              const namePel = String(row.namapelanggan || "").toLowerCase().trim();
+              const sidBaru = String(row.sidbaru || "").toLowerCase().trim();
+              const sidLama = String(row.sidlama || "").toLowerCase().trim();
+              return branchSet.has(idPel) || branchSet.has(namePel) || branchSet.has(sidBaru) || branchSet.has(sidLama);
+            });
+          }
+        } catch (filterErr) {
+          console.warn("Branch filter lookup error during export:", filterErr);
+        }
+      }
+
+      const ws = xlsx.utils.json_to_sheet(allRows);
       xlsx.utils.book_append_sheet(wb, ws, "Ticketing Data");
 
       const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-      const safeSbu = sbuFilter === "All" ? "" : `_${sbuFilter.replace(/\//g, "-")}`;
-      res.setHeader("Content-Disposition", `attachment; filename="Ticketing_Data${safeSbu}.xlsx"`);
+      const safeSbu = sbuFilter === "All" ? "" : `_${sbuFilter.replace(/[/\\?%*:|"<>]/g, "-")}`;
+      const periodLabel = periodId || yearParam || "Dataset";
+      res.setHeader("Content-Disposition", `attachment; filename="Ticketing_Data_${periodLabel}${safeSbu}.xlsx"`);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       return res.send(buf);
 
     } else {
       // Standard Excel Export Options
+      const cache = loadCache();
+      if (!cache) {
+        return res.status(404).json({ detail: "No processed data found in cache. Please upload a file first." });
+      }
+
       if (cache.type === "ticketing") {
         // Fallback if cached data is ticketing but user requested standard export
         const ws = xlsx.utils.json_to_sheet(cache.data || []);

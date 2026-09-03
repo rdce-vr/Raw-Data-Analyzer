@@ -671,17 +671,23 @@ export function Dashboard({
     try {
       const sbuParam = selectedSBU !== 'All' ? `&sbu_filter=${encodeURIComponent(selectedSBU)}` : '';
       const periodParam = activePeriodId 
-        ? `&periodId=${activePeriodId}` 
-        : `&year=${year || ''}`;
+        ? `&periodId=${encodeURIComponent(activePeriodId)}` 
+        : `&year=${selectedYear || year || ''}`;
+      const branchParam = limitToBranch ? `&limit_to_branch=true&filter_version_id=${encodeURIComponent(activeFilterVersion?.id || '')}` : '';
 
-      const response = await fetch(`/api/export?report_type=ticketing${sbuParam}${periodParam}`);
-      if (!response.ok) throw new Error('Export failed');
+      const response = await fetch(`/api/export?report_type=ticketing${sbuParam}${periodParam}${branchParam}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Export failed');
+      }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = selectedSBU === 'All' ? 'Ticketing_Data.xlsx' : `Ticketing_Data_${selectedSBU.replace(/[/]/g, '-')}.xlsx`;
+      const periodName = activePeriodId ? activePeriodId : `Year_${selectedYear || year || ''}`;
+      const safeSbu = selectedSBU !== 'All' ? `_${selectedSBU.replace(/[/\\?%*:|"<>]/g, '-')}` : '';
+      a.download = `Ticketing_Data_${periodName}${safeSbu}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
