@@ -28,6 +28,7 @@ interface ExecutivePdfModalProps {
   avgOutageMinutes: number;
   totalOutageMinutes: number;
   customerCount: number;
+  kpCount?: number;
   momDeltas?: {
     tickets?: { pct?: number; diff: number; prev: number; prevLabel?: string } | null;
     avgOutage?: { diff: number; prev: number; prevLabel?: string } | null;
@@ -52,6 +53,7 @@ export function ExecutivePdfModal({
   avgOutageMinutes,
   totalOutageMinutes,
   customerCount,
+  kpCount = 0,
   momDeltas,
   topCauses = [],
   topRepeatSIDs = [],
@@ -232,7 +234,13 @@ export function ExecutivePdfModal({
                 <div className="text-xl font-black text-slate-900 mt-1 tracking-tight">{sbuCounts.length}</div>
               </div>
               <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px]">
-                <span className="text-slate-400 font-semibold">Operational</span>
+                {momDeltas?.sbu?.diff !== undefined ? (
+                  <span className="font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                    {momDeltas.sbu.diff === 0 ? '± 0' : (momDeltas.sbu.diff > 0 ? `+${momDeltas.sbu.diff}` : momDeltas.sbu.diff)} MoM
+                  </span>
+                ) : (
+                  <span className="text-slate-400 font-semibold">Operational</span>
+                )}
               </div>
             </div>
 
@@ -241,11 +249,17 @@ export function ExecutivePdfModal({
               <div>
                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">KP Offices</span>
                 <div className="text-xl font-black text-slate-900 mt-1 tracking-tight">
-                  {topRepeatSIDs.length > 0 ? (sbuCounts.length * 3 + 4) : 12}
+                  {(kpCount > 0 ? kpCount : (topRepeatSIDs.length > 0 ? (sbuCounts.length * 3 + 4) : 12)).toLocaleString('id-ID')}
                 </div>
               </div>
               <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px]">
-                <span className="text-slate-400 font-semibold">Offices</span>
+                {momDeltas?.kp?.diff !== undefined ? (
+                  <span className="font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                    {momDeltas.kp.diff === 0 ? '± 0' : (momDeltas.kp.diff > 0 ? `+${momDeltas.kp.diff}` : momDeltas.kp.diff)} MoM
+                  </span>
+                ) : (
+                  <span className="text-slate-400 font-semibold">Offices</span>
+                )}
               </div>
             </div>
 

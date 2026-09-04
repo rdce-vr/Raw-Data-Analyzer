@@ -345,15 +345,65 @@ export function Dashboard({
 
     if (!prevPeriodObj) return null;
 
+    let prevStats = prevPeriodObj.stats;
+    if (typeof prevStats === 'string') {
+      try {
+        prevStats = JSON.parse(prevStats);
+      } catch (e) {
+        prevStats = null;
+      }
+    }
+
     const prevTickets = prevPeriodObj.totalRows || 0;
     const currentTickets = filteredData.length;
     
-    // Scale prevTickets if branch filter is active
+    // Scale baseline if branch filter is active
     const branchRatio = totalRows > 0 ? currentTickets / totalRows : 1;
     const estimatedPrevTickets = limitToBranch ? Math.round(prevTickets * branchRatio) : prevTickets;
 
     const ticketDiff = currentTickets - estimatedPrevTickets;
     const ticketPct = estimatedPrevTickets > 0 ? Math.round((ticketDiff / estimatedPrevTickets) * 1000) / 10 : 0;
+
+    // 1. Avg Outage & Total Outage Duration
+    let prevTotalOutageMin = 0;
+    if (prevStats?.time_summary?.durasigangguanmenit?.total) {
+      prevTotalOutageMin = parseFloat(prevStats.time_summary.durasigangguanmenit.total);
+    } else if (prevStats?.time_summary?.durasilaporanmenit?.total) {
+      prevTotalOutageMin = parseFloat(prevStats.time_summary.durasilaporanmenit.total);
+    } else if (prevStats?.time_summary?.durasigangguan?.total_seconds) {
+      prevTotalOutageMin = prevStats.time_summary.durasigangguan.total_seconds / 60;
+    }
+
+    if (limitToBranch && prevTotalOutageMin > 0) {
+      prevTotalOutageMin = Math.round(prevTotalOutageMin * branchRatio);
+    }
+
+    const prevAvgOutageMin = (prevTickets > 0 && prevTotalOutageMin > 0) 
+      ? (prevTotalOutageMin / (limitToBranch ? (estimatedPrevTickets || 1) : prevTickets)) 
+      : 0;
+    const avgOutageDiff = avgOutageMinutes - prevAvgOutageMin;
+
+    const totalOutageDiff = totalOutageMinutes - prevTotalOutageMin;
+    const totalOutagePct = prevTotalOutageMin > 0 ? Math.round((totalOutageDiff / prevTotalOutageMin) * 1000) / 10 : 0;
+
+    // 2. SBU Terminating Regions
+    const prevSBUCount = prevStats?.sbu_counts?.length || 0;
+    const currSBUCount = activeStats?.sbu_counts?.length || 0;
+    const sbuDiff = currSBUCount - prevSBUCount;
+    const sbuPct = prevSBUCount > 0 ? Math.round((sbuDiff / prevSBUCount) * 1000) / 10 : 0;
+
+    // 3. Kantor Perwakilan (KP) Offices
+    const prevKPCount = prevStats?.kp_counts?.length || 0;
+    const currKPCount = activeStats?.kp_counts?.length || 0;
+    const kpDiff = currKPCount - prevKPCount;
+    const kpPct = prevKPCount > 0 ? Math.round((kpDiff / prevKPCount) * 1000) / 10 : 0;
+
+    // 4. Impacted Customers / SIDs
+    const prevCustCount = prevStats?.customer_counts?.length || 0;
+    const estimatedPrevCust = limitToBranch && prevCustCount > 0 ? Math.round(prevCustCount * branchRatio) : prevCustCount;
+    const currCustCount = activeStats?.customer_counts?.length || 0;
+    const custDiff = currCustCount - estimatedPrevCust;
+    const custPct = estimatedPrevCust > 0 ? Math.round((custDiff / estimatedPrevCust) * 1000) / 10 : 0;
 
     return {
       tickets: {
@@ -363,30 +413,32 @@ export function Dashboard({
         prevLabel
       },
       avgOutage: {
-        diff: 0,
-        prev: avgOutageMinutes,
+        diff: avgOutageDiff,
+        prev: prevAvgOutageMin,
         prevLabel
       },
       totalOutage: {
-        pct: ticketPct,
-        diff: ticketDiff,
-        prev: estimatedPrevTickets > 0 ? (totalOutageMinutes * (estimatedPrevTickets / (currentTickets || 1))) : totalOutageMinutes,
+        pct: totalOutagePct,
+        diff: totalOutageDiff,
+        prev: prevTotalOutageMin,
         prevLabel
       },
       sbu: {
-        diff: 0,
-        prev: activeStats?.sbu_counts?.length || 0,
+        pct: sbuPct,
+        diff: sbuDiff,
+        prev: prevSBUCount,
         prevLabel
       },
       kp: {
-        diff: 0,
-        prev: activeStats?.kp_counts?.length || 0,
+        pct: kpPct,
+        diff: kpDiff,
+        prev: prevKPCount,
         prevLabel
       },
       customers: {
-        pct: ticketPct,
-        diff: Math.round(ticketDiff * 0.2),
-        prev: Math.round(estimatedPrevTickets * 0.2),
+        pct: custPct,
+        diff: custDiff,
+        prev: estimatedPrevCust,
         prevLabel
       }
     };
@@ -1133,6 +1185,7 @@ export function Dashboard({
           avgOutageMinutes={avgOutageMinutes}
           totalOutageMinutes={totalOutageMinutes}
           customerCount={activeStats?.customer_counts?.length || 0}
+          kpCount={activeStats?.kp_counts?.length || 0}
           momDeltas={momDeltas}
           topCauses={topIncidentCauses}
           topRepeatSIDs={repeatingSIDGroups.map(g => ({
