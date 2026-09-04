@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import * as xlsx from 'xlsx';
 import {
   BarChart,
   Bar,
@@ -322,6 +323,17 @@ export function Dashboard({
       .slice(0, 10);
   }, [filteredData, fileType]);
 
+  // Unique Customer / SID Count from filtered dataset
+  const uniqueCustomerCount = useMemo(() => {
+    if (fileType !== 'ticketing' || !filteredData || filteredData.length === 0) return 0;
+    const set = new Set<string>();
+    filteredData.forEach((row: any) => {
+      const name = String(row.namapelanggan || row.sidbaru || row.sidlama || "").trim();
+      if (name) set.add(name);
+    });
+    return set.size;
+  }, [filteredData, fileType]);
+
   // Compute MoM Comparison Deltas
   const momDeltas = useMemo(() => {
     if (fileType !== 'ticketing' || !activePeriodId || activePeriodId.startsWith("yearly-") || !periods || periods.length === 0) {
@@ -399,10 +411,18 @@ export function Dashboard({
     const kpPct = prevKPCount > 0 ? Math.round((kpDiff / prevKPCount) * 1000) / 10 : 0;
 
     // 4. Impacted Customers / SIDs
-    const prevCustCount = prevStats?.customer_counts?.length || 0;
-    const estimatedPrevCust = limitToBranch && prevCustCount > 0 ? Math.round(prevCustCount * branchRatio) : prevCustCount;
-    const currCustCount = activeStats?.customer_counts?.length || 0;
-    const custDiff = currCustCount - estimatedPrevCust;
+    let prevCustCount = 0;
+    if (prevStats?.customer_counts && Array.isArray(prevStats.customer_counts)) {
+      prevCustCount = prevStats.customer_counts.length;
+      if (prevCustCount >= 50 && prevTickets > 50) {
+        prevCustCount = Math.round(prevTickets * 0.4);
+      }
+    }
+    if (prevCustCount === 0 && prevTickets > 0) {
+      prevCustCount = Math.round(prevTickets * 0.4);
+    }
+    const estimatedPrevCust = limitToBranch && prevCustCount > 0 ? Math.max(1, Math.round(prevCustCount * branchRatio)) : prevCustCount;
+    const custDiff = uniqueCustomerCount - estimatedPrevCust;
     const custPct = estimatedPrevCust > 0 ? Math.round((custDiff / estimatedPrevCust) * 1000) / 10 : 0;
 
     return {
@@ -442,7 +462,7 @@ export function Dashboard({
         prevLabel
       }
     };
-  }, [fileType, activePeriodId, periods, filteredData.length, totalRows, limitToBranch, avgOutageMinutes, totalOutageMinutes, activeStats]);
+  }, [fileType, activePeriodId, periods, filteredData.length, totalRows, limitToBranch, avgOutageMinutes, totalOutageMinutes, activeStats, uniqueCustomerCount]);
 
 
 
@@ -719,31 +739,23 @@ export function Dashboard({
     return filteredRepSIDGroups.slice(start, start + repPerPage);
   }, [filteredRepSIDGroups, repPage]);
 
-  const handleExportTicketing = async () => {
+  const handleExportTicketing = () => {
     try {
-      const sbuParam = selectedSBU !== 'All' ? `&sbu_filter=${encodeURIComponent(selectedSBU)}` : '';
-      const periodParam = activePeriodId 
-        ? `&periodId=${encodeURIComponent(activePeriodId)}` 
-        : `&year=${selectedYear || year || ''}`;
-      const branchParam = limitToBranch ? `&limit_to_branch=true&filter_version_id=${encodeURIComponent(activeFilterVersion?.id || '')}` : '';
-
-      const response = await fetch(`/api/export?report_type=ticketing${sbuParam}${periodParam}${branchParam}`);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Export failed');
+      if (!filteredData || filteredData.length === 0) {
+        alert('No filtered ticketing data available to export.');
+        return;
       }
 
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
+      const wb = xlsx.utils.book_new();
+      const ws = xlsx.utils.json_to_sheet(filteredData);
+      xlsx.utils.book_append_sheet(wb, ws, "Ticketing Data");
+
       const periodName = activePeriodId ? activePeriodId : `Year_${selectedYear || year || ''}`;
       const safeSbu = selectedSBU !== 'All' ? `_${selectedSBU.replace(/[/\\?%*:|"<>]/g, '-')}` : '';
-      a.download = `Ticketing_Data_${periodName}${safeSbu}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      const branchTag = limitToBranch ? '_Branch_Filtered' : '';
+      const fileName = `Ticketing_Data_${periodName}${safeSbu}${branchTag}.xlsx`;
+
+      xlsx.writeFile(wb, fileName);
     } catch (err: any) {
       console.error('Export error:', err);
       alert('Failed to export ticketing data: ' + err.message);
@@ -1051,7 +1063,7 @@ export function Dashboard({
                     </div>
                     <div>
                       <span className="font-extrabold text-xs text-slate-800 block">Executive Summary (PDF)</span>
-                      <span className="text-[10px] text-slate-400 font-medium block">Clean 1-page A4 landscape briefing sheet</span>
+                      <span className="text-[10px] text-slate-400 font-medium block">Clean 1-page A4 portrait briefing sheet</span>
                     </div>
                   </button>
 
@@ -1082,7 +1094,7 @@ export function Dashboard({
           totalOutageMinutes={totalOutageMinutes}
           sbuCount={activeStats?.sbu_counts?.length || 0}
           kpCount={activeStats?.kp_counts?.length || 0}
-          customerCount={activeStats?.customer_counts?.length || 0}
+          customerCount={uniqueCustomerCount}
           momDeltas={momDeltas}
         />
 
@@ -1111,15 +1123,8 @@ export function Dashboard({
                         #{idx + 1}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="font-extrabold text-slate-800 text-sm md:text-base truncate" title={item.name}>
-                          {item.name}
-                        </p>
-                        <div className="w-full bg-slate-250/20 h-1.5 rounded-full overflow-hidden mt-2.5">
-                          <div
-                            className="bg-violet-500 h-full rounded-full transition-all duration-300"
-                            style={{ width: `${percent}%` }}
-                          />
-                        </div>
+                        <h4 className="font-bold text-slate-900 truncate text-sm">{item.name || "Unknown Customer"}</h4>
+                        <p className="text-xs text-slate-400 font-semibold mt-0.5">Rank #{idx + 1} Impacted Customer</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 justify-end flex-shrink-0 pl-12 md:pl-0">
@@ -1184,13 +1189,17 @@ export function Dashboard({
           totalTickets={filteredData.length}
           avgOutageMinutes={avgOutageMinutes}
           totalOutageMinutes={totalOutageMinutes}
-          customerCount={activeStats?.customer_counts?.length || 0}
+          customerCount={uniqueCustomerCount}
           kpCount={activeStats?.kp_counts?.length || 0}
           momDeltas={momDeltas}
           topCauses={topIncidentCauses}
-          topRepeatSIDs={repeatingSIDGroups.map(g => ({
+          topCustomers={activeStats?.customer_counts || []}
+          repeatingStats={repeatingStats}
+          topRepeatSIDs={repeatingSIDGroups.slice(0, 10).map(g => ({
             sid: g.sid,
             customerName: g.customerName,
+            dominantCause: g.dominantCause,
+            sbuOwner: g.sbuOwner,
             repeats: g.repeats,
             totalDuration: g.totalDuration
           }))}
